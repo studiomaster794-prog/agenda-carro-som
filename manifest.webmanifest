@@ -1,0 +1,25 @@
+{
+  "name": "Agenda · Carro de som · Studio Seiko",
+  "short_name": "Carro de som",
+  "description": "Agenda do carro de som — Studio Seiko",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#241c16",
+  "theme_color": "#241c16",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
