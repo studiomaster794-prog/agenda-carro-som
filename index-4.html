@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#241C16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Agenda · Carro de som · Studio Seiko</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Literata:opsz,wght@7..72,400;7..72,600;7..72,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img class="logo" src="icons/icon-192.png" width="48" height="48" alt="">
+      <div>
+        <p class="mark">Studio Seiko</p>
+        <h1>Carro de som</h1>
+      </div>
+    </div>
+    <p class="hours" title="Horário de funcionamento">seg–sáb · 8:30–11:30 · 14:00–18:00 · <span id="rateHint">R$ 50/h</span></p>
+  </header>
+
+  <nav class="tabs" aria-label="Seções">
+    <button type="button" class="tab is-on" data-panel="agenda">Agenda</button>
+    <button type="button" class="tab" data-panel="dashboard">Dashboard</button>
+    <button type="button" class="tab" data-panel="comandos">Comandos</button>
+  </nav>
+
+  <main class="layout is-agenda">
+    <section class="board" id="panel-agenda">
+      <div class="toolbar">
+        <div class="pager">
+          <button type="button" id="prevBtn" aria-label="Anterior">‹</button>
+          <h2 id="periodTitle">—</h2>
+          <button type="button" id="nextBtn" aria-label="Próximo">›</button>
+        </div>
+        <div class="views" role="tablist" aria-label="Visão">
+          <button type="button" data-view="dia">Dia</button>
+          <button type="button" data-view="semana" class="is-on">Semana</button>
+          <button type="button" data-view="mes">Mês</button>
+        </div>
+        <button type="button" class="ghost" id="hojeBtn">Hoje</button>
+      </div>
+      <div id="calendar" class="calendar"></div>
+    </section>
+
+    <section class="board dash" id="panel-dashboard">
+      <div class="toolbar dash-bar">
+        <div class="views" id="dashRange" role="tablist" aria-label="Período">
+          <button type="button" data-range="hoje">Hoje</button>
+          <button type="button" data-range="semana" class="is-on">Esta semana</button>
+          <button type="button" data-range="mes">Este mês</button>
+          <button type="button" data-range="periodo">Período</button>
+        </div>
+        <div id="dashCustom" class="dash-custom" hidden>
+          <label>De <input type="date" id="dashFrom"></label>
+          <label>Até <input type="date" id="dashTo"></label>
+        </div>
+        <label class="rate">Valor da hora (R$)
+          <input id="valorHora" type="number" min="0" step="0.01" value="50">
+        </label>
+      </div>
+      <p class="dash-span" id="dashSpan"></p>
+      <div id="dashKpis" class="kpis"></div>
+      <h3 class="dash-h">Por cliente</h3>
+      <p class="dash-note">Desc./h vale nas horas deste período. Pago marca o total de uma vez — o de cada horário continua no histórico.</p>
+      <div class="table-wrap">
+        <table class="ledger" id="dashClients">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th class="num">Horas</th>
+              <th class="num">Desc./h</th>
+              <th class="num">Desconto</th>
+              <th class="num">Total</th>
+              <th class="num">Pago</th>
+              <th class="num">Pendente</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="hist-head">
+        <h3 class="dash-h">Histórico</h3>
+        <label>Cliente
+          <select id="histCliente">
+            <option value="">Todos</option>
+          </select>
+        </label>
+        <label>Pagamento
+          <select id="histPago">
+            <option value="todos">Todos</option>
+            <option value="pago">Pago</option>
+            <option value="pendente">Pendente</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table class="ledger" id="dashHist">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Cliente</th>
+              <th>Horário</th>
+              <th class="num">Horas</th>
+              <th class="num">Bruto</th>
+              <th class="num">Desconto</th>
+              <th class="num">Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="cab" id="panel-comandos">
+      <div class="cab-head">
+        <h2>Assistente</h2>
+        <p>Fala como no zap. Eu marco, se estiver livre.</p>
+      </div>
+      <div id="log" class="log" aria-live="polite"></div>
+      <form id="cmdForm" class="composer">
+        <label class="sr" for="cmd">Comando</label>
+        <textarea id="cmd" rows="2" placeholder="Ex.: Coloca Maria segunda, quarta e sexta às 9h, 1 hora cada dia" autocomplete="off"></textarea>
+        <button type="submit">Enviar</button>
+      </form>
+    </aside>
+  </main>
+
+  <dialog id="editDlg" class="dlg">
+    <form id="editForm" method="dialog">
+      <h3 id="editTitle">Compromisso</h3>
+      <label>Cliente
+        <input name="cliente" required>
+      </label>
+      <label>Serviço
+        <input name="servico" value="Carro de som">
+      </label>
+      <label>Data
+        <input name="data" type="date" required>
+      </label>
+      <div class="row2">
+        <label>Início
+          <input name="inicio" type="time" required step="1800">
+        </label>
+        <label>Duração
+          <select name="duracaoMin"></select>
+        </label>
+      </div>
+      <label>Observações
+        <textarea name="observacoes" rows="2"></textarea>
+      </label>
+      <div class="row2">
+        <label>Desconto neste horário (R$)
+          <input name="desconto" type="number" min="0" step="0.01" value="0">
+        </label>
+        <label>Desconto por hora (R$)
+          <input name="descontoHora" type="number" min="0" step="0.01" value="0">
+        </label>
+      </div>
+      <label>Pagamento
+        <button type="button" id="pagoBtn" class="pay is-off" aria-pressed="false">Pendente</button>
+      </label>
+      <p id="editTotal" class="tally"></p>
+      <p id="editErr" class="err" hidden></p>
+      <menu>
+        <button type="submit" value="salvar" class="ok">Salvar</button>
+        <button type="submit" value="cancelar" class="warn">Cancelar horário</button>
+        <button type="submit" value="excluir" class="danger">Excluir</button>
+        <button type="submit" value="fechar" class="ghost">Fechar</button>
+      </menu>
+      <p id="serieHint" class="hint" hidden></p>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function (e) { console.log('SW erro', e); });
+  });
+}
+</script>
+</body>
+</html>
