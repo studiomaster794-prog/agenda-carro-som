@@ -7,15 +7,20 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Carro de som">
+  <meta name="application-name" content="Carro de som">
+  <meta name="msapplication-TileColor" content="#241c16">
+  <meta name="msapplication-TileImage" content="icons/icon-192.png">
   <title>Agenda · Carro de som · Studio Seiko</title>
-  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Literata:opsz,wght@7..72,400;7..72,600;7..72,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=19">
 </head>
 <body>
   <header class="top">
@@ -72,7 +77,7 @@
       <p class="dash-span" id="dashSpan"></p>
       <div id="dashKpis" class="kpis"></div>
       <h3 class="dash-h">Por cliente</h3>
-      <p class="dash-note">Desc./h vale nas horas deste período. Pago marca o total de uma vez — o de cada horário continua no histórico.</p>
+      <p class="dash-note">Desc./h sai de cada hora. Hora a R$ 50 com desconto de R$ 5 fica R$ 45. Pago é o adiantamento. Pendente = total − pago.</p>
       <div class="table-wrap">
         <table class="ledger" id="dashClients">
           <thead>
@@ -80,11 +85,11 @@
               <th>Cliente</th>
               <th class="num">Horas</th>
               <th class="num">Desc./h</th>
+              <th class="num">Hora fica</th>
               <th class="num">Desconto</th>
               <th class="num">Total</th>
               <th class="num">Pago</th>
               <th class="num">Pendente</th>
-              <th></th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -127,7 +132,8 @@
     <aside class="cab" id="panel-comandos">
       <div class="cab-head">
         <h2>Assistente</h2>
-        <p>Fala como no zap. Eu marco, se estiver livre.</p>
+        <p>Fala como no zap, ou monta o horário no calendário.</p>
+        <button type="button" id="addClienteBtn" class="add-cliente">Adicionar cliente</button>
       </div>
       <div id="log" class="log" aria-live="polite"></div>
       <form id="cmdForm" class="composer">
@@ -184,13 +190,63 @@
     </form>
   </dialog>
 
-  <script src="app.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function (e) { console.log('SW erro', e); });
-  });
-}
-</script>
+  <dialog id="payDlg" class="dlg">
+    <form id="payForm">
+      <h3 id="payTitle">Receber</h3>
+      <p id="paySummary" class="tally"></p>
+      <div class="row2">
+        <label>Valor recebido (R$)
+          <input name="valor" inputmode="decimal" autocomplete="off" required>
+        </label>
+        <label>Data
+          <input name="data" type="date" required>
+        </label>
+      </div>
+      <p id="payPreview" class="hint"></p>
+      <p id="payErr" class="err" hidden></p>
+      <menu>
+        <button type="submit" class="ok">Lançar</button>
+        <button type="button" class="warn" id="payFill">Usar pendente</button>
+        <button type="button" class="ghost" id="payClose">Fechar</button>
+      </menu>
+      <h4 class="dash-h">Neste período</h4>
+      <ul id="payList" class="pay-list"></ul>
+    </form>
+  </dialog>
+
+  <dialog id="addDlg" class="dlg">
+    <form id="addForm">
+      <h3 id="addTitle">Quais dias?</h3>
+      <p id="addLead" class="hint"></p>
+      <div id="addCal"></div>
+      <div id="addTime" class="add-time" hidden>
+        <div class="row2">
+          <label>Começa
+            <select name="inicio"></select>
+          </label>
+          <label>Termina
+            <select name="fim"></select>
+          </label>
+        </div>
+        <p id="addTimeHint" class="hint"></p>
+      </div>
+      <p id="addErr" class="err" hidden></p>
+      <menu>
+        <button type="button" id="addMonth" class="warn">Mês todo</button>
+        <button type="submit" class="ok" id="addNext">Próximo</button>
+        <button type="button" class="ghost" id="addBack">Voltar</button>
+        <button type="button" class="ghost" id="addClose">Fechar</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="app.js?v=19"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

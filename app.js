@@ -10,6 +10,8 @@
   const SLOT = 30;
   const COLORS = ["#c23b2e", "#1c2740", "#1f7a6a", "#3d4f7a", "#8a4a1f", "#2a9d8f", "#5c3d7a"];
   const SETTINGS_KEY = "seiko-carro-som-settings";
+  const PAY_KEY = "seiko-carro-som-pagamentos";
+  const DISC_KEY = "seiko-carro-som-descontos";
   const DEFAULT_RATE = 50;
 
   const $ = (id) => document.getElementById(id);
@@ -27,10 +29,18 @@
   let pending = null;
   let db;
   let settings = loadSettings();
+  let payments = loadPayments();
+  let discounts = [];
+  persistDiscounts();
+  let payTarget = null;
+  let discTarget = null;
   let dashRange = "semana";
   let histCliente = "";
   let histPago = "todos";
   let pagoEditing = false;
+  let addWaitName = false;
+  const addState = { cliente: "", month: startOfDay(now()), days: new Set(), step: "dias" };
+  const CMD_PLACEHOLDER = "Ex.: Coloca Maria segunda, quarta e sexta às 9h, 1 hora cada dia";
 
   function hm(s) {
     const [h, m] = s.split(":").map(Number);
@@ -102,6 +112,42 @@
     const hint = $("rateHint");
     if (hint) hint.textContent = money(settings.valorHora) + "/h";
   }
+  function loadPayments() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PAY_KEY) || "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw.map(normalizePayment).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+  function normalizePayment(p) {
+    if (!p || !String(p.cliente || "").trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(p.data || ""))) return null;
+    const valor = round2(p.valor);
+    if (!(valor > 0)) return null;
+    return {
+      id: String(p.id || uid()),
+      cliente: String(p.cliente).trim(),
+      data: String(p.data),
+      valor,
+      createdAt: p.createdAt || new Date().toISOString(),
+    };
+  }
+  function persistPayments() {
+    localStorage.setItem(PAY_KEY, JSON.stringify(payments));
+  }
+  function loadDiscounts() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(DISC_KEY) || "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw.map(normalizePayment).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+  function persistDiscounts() {
+    localStorage.setItem(DISC_KEY, JSON.stringify(discounts));
+  }
   function money(n) {
     return (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
@@ -126,7 +172,8 @@
     const horas = (item.duracaoMin || 0) / 60;
     const bruto = round2(horas * rate);
     const descFixo = Math.max(0, Number(item.desconto) || 0);
-    const descHora = Math.max(0, Number(item.descontoHora) || 0);
+    let descHora = Math.max(0, Number(item.descontoHora) || 0);
+    if (descHora > rate) descHora = 0;
     const desconto = Math.min(bruto, round2(descFixo + horas * descHora));
     const total = Math.max(0, round2(bruto - desconto));
     return {
@@ -923,6 +970,28 @@
 
     const list = await store.all();
     const serieId = parsed.slots.length > 1 ? uid() : null;
+    const { blocked, already, ok } = splitSlots(list, parsed);
+
+    if (!ok.length && !already.length) {
+      return say("bad", "Não marquei nada.<br>" + blocked.map((b) => b.reason).join("<br>"));
+    }
+    if (ok.length) await saveSlots(ok, parsed, serieId);
+    if (parsed.slots[0]) {
+      cursor = parsed.slots[0].date;
+      view = parsed.slots.length > 1 ? "semana" : view;
+      render();
+    }
+    const parts = [];
+    if (ok.length) parts.push(resumeSave(ok, parsed));
+    if (already.length) {
+      const lines = already.map((s) => `${fmtLong(fromIso(s.data))} · ${minutesToHHMM(s.inicioMin)}–${minutesToHHMM(s.inicioMin + s.duracaoMin)}`);
+      parts.push(`Já estava com <strong>${esc(parsed.cliente)}</strong> nesse horário:<br>${lines.join("<br>")}`);
+    }
+    if (blocked.length) parts.push("Não sobrescrevi:<br>" + blocked.map((b) => b.reason).join("<br>"));
+    say(blocked.length ? "bad" : "ok", parts.join("<br><br>"));
+  }
+
+  function splitSlots(list, parsed) {
     const blocked = [];
     const already = [];
     const ok = [];
@@ -962,24 +1031,7 @@
       }
       ok.push(s);
     }
-
-    if (!ok.length && !already.length) {
-      return say("bad", "Não marquei nada.<br>" + blocked.map((b) => b.reason).join("<br>"));
-    }
-    if (ok.length) await saveSlots(ok, parsed, serieId);
-    if (parsed.slots[0]) {
-      cursor = parsed.slots[0].date;
-      view = parsed.slots.length > 1 ? "semana" : view;
-      render();
-    }
-    const parts = [];
-    if (ok.length) parts.push(resumeSave(ok, parsed));
-    if (already.length) {
-      const lines = already.map((s) => `${fmtLong(fromIso(s.data))} · ${minutesToHHMM(s.inicioMin)}–${minutesToHHMM(s.inicioMin + s.duracaoMin)}`);
-      parts.push(`Já estava com <strong>${esc(parsed.cliente)}</strong> nesse horário:<br>${lines.join("<br>")}`);
-    }
-    if (blocked.length) parts.push("Não sobrescrevi:<br>" + blocked.map((b) => b.reason).join("<br>"));
-    say(blocked.length ? "bad" : "ok", parts.join("<br><br>"));
+    return { blocked, already, ok };
   }
 
   async function saveSlots(slots, parsed, serieId) {
@@ -1094,10 +1146,24 @@
     const d = fromIso(iso);
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   }
-  function payBadge(pago) {
-    return pago
-      ? `<span class="pay is-on" aria-label="Pago">Pago</span>`
-      : `<span class="pay is-off" aria-label="Pendente">Pendente</span>`;
+  function payBadge(estado, title) {
+    if (estado === "pago") return `<span class="pay is-on" aria-label="Pago">Pago</span>`;
+    if (estado === "parcial") {
+      return `<span class="pay is-part" aria-label="Parcial"${title ? ` title="${esc(title)}"` : ""}>Parcial</span>`;
+    }
+    return `<span class="pay is-off" aria-label="Pendente">Pendente</span>`;
+  }
+  function discountsFor(cliente, from, to) {
+    const key = clientKey(cliente);
+    return discounts
+      .filter((p) => clientKey(p.cliente) === key && inPeriod(p.data, from, to))
+      .sort((a, b) => a.data.localeCompare(b.data) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  }
+  function paymentsFor(cliente, from, to) {
+    const key = clientKey(cliente);
+    return payments
+      .filter((p) => clientKey(p.cliente) === key && inPeriod(p.data, from, to))
+      .sort((a, b) => a.data.localeCompare(b.data) || String(a.createdAt).localeCompare(String(b.createdAt)));
   }
   function clientKey(name) {
     return stripAccents(String(name || "").toLowerCase()).trim();
@@ -1114,6 +1180,13 @@
       .filter((x) => inPeriod(x.data, from, to))
       .sort((a, b) => a.data.localeCompare(b.data) || a.inicioMin - b.inicioMin);
 
+    const byClient = new Map();
+    for (const x of jobs) {
+      const k = clientKey(x.cliente);
+      if (!byClient.has(k)) byClient.set(k, { cliente: x.cliente, jobs: [] });
+      byClient.get(k).jobs.push(x);
+    }
+
     const totals = jobs.reduce(
       (acc, x) => {
         const f = figures(x);
@@ -1121,13 +1194,25 @@
         acc.bruto += f.bruto;
         acc.desconto += f.desconto;
         acc.total += f.total;
-        acc.recebido += f.recebido;
-        acc.pendente += f.pendente;
         acc.ids.add(clientKey(x.cliente));
         return acc;
       },
       { min: 0, bruto: 0, desconto: 0, total: 0, recebido: 0, pendente: 0, ids: new Set() }
     );
+    totals.desconto = 0;
+    totals.total = 0;
+    for (const pack of byClient.values()) {
+      const s = clientBalance(pack.jobs, from, to);
+      totals.desconto += s.desconto;
+      totals.total += s.total;
+      totals.recebido += s.pago;
+      totals.pendente += s.pendente;
+    }
+    totals.recebido = round2(totals.recebido);
+    totals.pendente = round2(totals.pendente);
+    totals.bruto = round2(totals.bruto);
+    totals.desconto = round2(totals.desconto);
+    totals.total = round2(totals.total);
 
     const kpis = $("dashKpis");
     if (kpis) {
@@ -1149,31 +1234,24 @@
         .join("");
     }
 
-    const byClient = new Map();
-    for (const x of jobs) {
-      const k = clientKey(x.cliente);
-      if (!byClient.has(k)) byClient.set(k, { cliente: x.cliente, jobs: [] });
-      byClient.get(k).jobs.push(x);
-    }
     const clientBody = $("dashClients") && $("dashClients").tBodies[0];
     if (clientBody) {
       const rows = [...byClient.values()].sort((a, b) => a.cliente.localeCompare(b.cliente, "pt-BR"));
       clientBody.innerHTML = rows.length
         ? rows
             .map((r) => {
-              const s = summarizeClient(r.jobs);
-              const rateVal = s.hourRate == null ? "" : String(s.hourRate);
-              const payCls = s.allPaid ? "is-on" : "is-off";
-              const payTxt = s.allPaid ? "Pago" : "Pagar total";
+              const s = clientBalance(r.jobs, from, to);
+              const pendenteTxt = s.credito > 0 ? "Crédito " + money(s.credito) : money(s.pendente);
+              const horaTxt = s.horaFica == null ? "—" : money(s.horaFica);
               return `<tr data-key="${esc(clientKey(r.cliente))}">
-                <td>${esc(r.cliente)}</td>
-                <td class="num">${esc(fmtHours(s.min))}</td>
-                <td class="num"><input class="mini" data-desc-hora inputmode="decimal" min="0" step="0.01" value="${esc(rateVal)}" aria-label="Desconto por hora de ${esc(r.cliente)}"></td>
-                <td class="num">${esc(money(s.desconto))}</td>
-                <td class="num">${esc(money(s.total))}</td>
-                <td class="num">${esc(money(s.pago))}</td>
-                <td class="num">${esc(money(s.pendente))}</td>
-                <td class="act"><button type="button" class="pay ${payCls}" data-pay-all>${esc(payTxt)}</button></td>
+                <td data-label="Cliente">${esc(r.cliente)}</td>
+                <td class="num" data-label="Horas">${esc(fmtHours(s.min))}</td>
+                <td class="num" data-label="Desc./h"><input class="mini" data-desc-hora inputmode="decimal" value="${esc(moneyInput(s.descHora))}" placeholder="0" aria-label="Desconto por hora de ${esc(r.cliente)}"></td>
+                <td class="num" data-label="Hora fica">${esc(horaTxt)}</td>
+                <td class="num" data-label="Desconto">${esc(money(s.desconto))}</td>
+                <td class="num" data-label="Total">${esc(money(s.total))}</td>
+                <td class="num" data-label="Pago"><input class="mini" data-pago inputmode="decimal" value="${esc(moneyInput(s.adiantado))}" placeholder="0" aria-label="Pagamento parcial de ${esc(r.cliente)}"></td>
+                <td class="num${s.credito > 0 ? " is-credit" : ""}" data-label="Pendente">${esc(pendenteTxt)}</td>
               </tr>`;
             })
             .join("")
@@ -1187,25 +1265,27 @@
           if (sel) sel.value = histCliente;
           renderDashFromStore();
         };
-        const input = tr.querySelector("[data-desc-hora]");
-        if (input) {
-          const commit = () => applyHourDiscount(pack.jobs, input.value);
-          input.addEventListener("click", (e) => e.stopPropagation());
-          input.addEventListener("keydown", (e) => {
+        const descInput = tr.querySelector("[data-desc-hora]");
+        if (descInput) {
+          descInput.addEventListener("click", (e) => e.stopPropagation());
+          descInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              input.blur();
+              descInput.blur();
             }
           });
-          input.addEventListener("change", commit);
+          descInput.addEventListener("change", () => applyHourDiscount(pack.cliente, descInput.value));
         }
-        const pay = tr.querySelector("[data-pay-all]");
-        if (pay) {
-          pay.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const allPaid = pack.jobs.every((x) => x.pago);
-            applyPaid(pack.jobs, !allPaid);
+        const pagoInput = tr.querySelector("[data-pago]");
+        if (pagoInput) {
+          pagoInput.addEventListener("click", (e) => e.stopPropagation());
+          pagoInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              pagoInput.blur();
+            }
           });
+          pagoInput.addEventListener("change", () => applyPartialPayment(pack.cliente, from, to, pagoInput.value));
         }
       });
     }
@@ -1226,10 +1306,12 @@
       }
     }
 
+    const cover = jobCover(jobs, from, to);
     const hist = jobs.filter((x) => {
       if (histCliente && !sameClient(x.cliente, histCliente)) return false;
-      if (histPago === "pago" && !x.pago) return false;
-      if (histPago === "pendente" && x.pago) return false;
+      const estado = (cover.get(x.id) || {}).estado || "pendente";
+      if (histPago === "pago" && estado !== "pago") return false;
+      if (histPago === "pendente" && estado === "pago") return false;
       return true;
     });
     const histBody = $("dashHist") && $("dashHist").tBodies[0];
@@ -1238,39 +1320,43 @@
         ? hist
             .map((x) => {
               const f = figures(x);
+              const c = cover.get(x.id) || { estado: "pendente", coberto: 0, total: f.total };
+              const title = c.estado === "parcial" ? `Entrou ${money(c.coberto)} de ${money(c.total)}` : "";
               return `<tr data-id="${esc(x.id)}">
-                <td>${esc(fmtIso(x.data))}</td>
-                <td>${esc(x.cliente)}</td>
-                <td>${esc(minutesToHHMM(x.inicioMin))}–${esc(minutesToHHMM(x.inicioMin + x.duracaoMin))}</td>
-                <td class="num">${esc(fmtHours(x.duracaoMin))}</td>
-                <td class="num">${esc(money(f.bruto))}</td>
-                <td class="num">${esc(money(f.desconto))}</td>
-                <td class="num">${esc(money(f.total))}</td>
-                <td>${payBadge(x.pago)}</td>
+                <td data-label="Data">${esc(fmtIso(x.data))}</td>
+                <td data-label="Cliente">${esc(x.cliente)}</td>
+                <td data-label="Horário">${esc(minutesToHHMM(x.inicioMin))}–${esc(minutesToHHMM(x.inicioMin + x.duracaoMin))}</td>
+                <td class="num" data-label="Horas">${esc(fmtHours(x.duracaoMin))}</td>
+                <td class="num" data-label="Bruto">${esc(money(f.bruto))}</td>
+                <td class="num" data-label="Desconto">${esc(money(f.desconto))}</td>
+                <td class="num" data-label="Total">${esc(money(f.total))}</td>
+                <td data-label="Status">${payBadge(c.estado, title)}</td>
               </tr>`;
             })
             .join("")
-        : `<tr><td class="empty" colspan="8">Nenhum serviço neste filtro.</td></tr>`;
+        : `<tr><td class="empty" colspan="7">Nenhum serviço neste filtro.</td></tr>`;
       histBody.querySelectorAll("tr[data-id]").forEach((tr) => {
-        tr.onclick = async (e) => {
+        tr.onclick = async () => {
           const all = await store.all();
           const item = all.find((x) => x.id === tr.dataset.id);
-          if (!item) return;
-          if (e.target.closest(".pay")) {
-            item.pago = !item.pago;
-            item.updatedAt = new Date().toISOString();
-            await store.put(item);
-            render();
-            return;
-          }
-          openEdit(item);
+          if (item) openEdit(item);
         };
       });
     }
+    paintPayDialog(jobs, false);
   }
 
-  function summarizeClient(items) {
-    const acc = { min: 0, bruto: 0, desconto: 0, total: 0, pago: 0, pendente: 0 };
+  function sharedHourDiscount(items) {
+    const rates = new Set(items.map((x) => round2(x.descontoHora || 0)).filter((n) => n > 0));
+    if (rates.size !== 1) return 0;
+    return [...rates][0];
+  }
+  function moneyInput(n) {
+    if (!(Number(n) > 0)) return "";
+    return String(round2(n)).replace(".", ",");
+  }
+  function clientBalance(items, from, to) {
+    const acc = { min: 0, bruto: 0, desconto: 0, total: 0, legado: 0 };
     const rates = new Set();
     for (const x of items) {
       const f = figures(x);
@@ -1278,40 +1364,268 @@
       acc.bruto += f.bruto;
       acc.desconto += f.desconto;
       acc.total += f.total;
-      acc.pago += f.recebido;
-      acc.pendente += f.pendente;
-      rates.add(round2(x.descontoHora || 0));
+      if (x.pago) acc.legado += f.total;
+      let porHora = Math.max(0, Number(x.descontoHora) || 0);
+      if (porHora > settings.valorHora) porHora = 0;
+      rates.add(round2(porHora));
     }
+    const descHora = rates.size === 1 ? [...rates][0] : null;
+    const horaFica = descHora == null ? null : round2(Math.max(0, settings.valorHora - descHora));
+    const adiantado = items.length
+      ? paymentsFor(items[0].cliente, from, to).reduce((s, p) => s + p.valor, 0)
+      : 0;
+    const pago = round2(acc.legado + adiantado);
+    const total = round2(acc.total);
+    const saldo = round2(total - pago);
     return {
-      ...acc,
-      hourRate: rates.size === 1 ? [...rates][0] : null,
-      allPaid: items.length > 0 && items.every((x) => x.pago),
+      min: acc.min,
+      bruto: round2(acc.bruto),
+      desconto: round2(acc.desconto),
+      total,
+      descHora,
+      horaFica,
+      adiantado: round2(adiantado),
+      pago,
+      pendente: saldo > 0 ? saldo : 0,
+      credito: saldo < 0 ? round2(-saldo) : 0,
     };
+  }
+  async function foldSharedHourDiscount(list, from, to) {
+    const groups = new Map();
+    for (const x of active(list)) {
+      const k = clientKey(x.cliente);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(x);
+    }
+    let changed = false;
+    for (const items of groups.values()) {
+      const valor = sharedHourDiscount(items);
+      if (!(valor > 0)) continue;
+      const cliente = items[0].cliente;
+      if (!discountsFor(cliente, from, to).length) {
+        const today = isoDate(startOfDay(now()));
+        discounts.push({
+          id: uid(),
+          cliente,
+          data: today >= from && today <= to ? today : from,
+          valor,
+          createdAt: new Date().toISOString(),
+        });
+        changed = true;
+      }
+      const nowIso = new Date().toISOString();
+      for (const item of items) {
+        if (!(item.descontoHora > 0)) continue;
+        item.descontoHora = 0;
+        item.updatedAt = nowIso;
+        await store.put(item);
+        changed = true;
+      }
+    }
+    if (changed) persistDiscounts();
+    return changed;
+  }
+  function jobCover(jobs, from, to) {
+    const map = new Map();
+    const groups = new Map();
+    for (const x of jobs) {
+      const k = clientKey(x.cliente);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(x);
+    }
+    for (const items of groups.values()) {
+      let pool = paymentsFor(items[0].cliente, from, to).reduce((s, p) => s + p.valor, 0);
+      const ordered = [...items].sort((a, b) => a.data.localeCompare(b.data) || a.inicioMin - b.inicioMin);
+      for (const x of ordered) {
+        const total = figures(x).total;
+        let coberto = 0;
+        if (x.pago || total <= 0) coberto = total;
+        else {
+          coberto = round2(Math.min(total, pool));
+          pool = round2(Math.max(0, pool - coberto));
+        }
+        let estado = "pendente";
+        if (coberto >= total - 0.001) estado = "pago";
+        else if (coberto > 0) estado = "parcial";
+        map.set(x.id, { total, coberto, estado });
+      }
+    }
+    return map;
   }
   function parseMoneyInput(v) {
     const n = Number(String(v).replace(",", "."));
     return Number.isFinite(n) && n > 0 ? round2(n) : 0;
   }
-  async function applyHourDiscount(items, raw) {
-    const n = parseMoneyInput(raw);
+  async function applyHourDiscount(cliente, raw) {
+    let n = parseMoneyInput(raw);
+    if (n > settings.valorHora) n = round2(settings.valorHora);
     const nowIso = new Date().toISOString();
-    for (const item of items) {
-      if (round2(item.descontoHora || 0) === n) continue;
+    const key = clientKey(cliente);
+    const all = await store.all();
+    for (const item of all) {
+      if (item.status !== "ativo" || clientKey(item.cliente) !== key) continue;
+      if (round2(item.descontoHora || 0) === n && !(Number(item.descontoHora) > settings.valorHora)) continue;
       item.descontoHora = n;
       item.updatedAt = nowIso;
       await store.put(item);
     }
     render();
   }
-  async function applyPaid(items, paid) {
-    const nowIso = new Date().toISOString();
-    for (const item of items) {
-      if (item.pago === paid) continue;
-      item.pago = paid;
-      item.updatedAt = nowIso;
-      await store.put(item);
+  function applyPartialPayment(cliente, from, to, raw) {
+    const valor = parseMoneyInput(raw);
+    const key = clientKey(cliente);
+    payments = payments.filter((p) => !(clientKey(p.cliente) === key && inPeriod(p.data, from, to)));
+    if (valor > 0) {
+      const today = isoDate(startOfDay(now()));
+      payments.push({
+        id: uid(),
+        cliente,
+        data: today >= from && today <= to ? today : from,
+        valor,
+        createdAt: new Date().toISOString(),
+      });
     }
+    persistPayments();
     render();
+  }
+  function openPayDialog(cliente, jobs) {
+    payTarget = { key: clientKey(cliente), cliente };
+    const form = $("payForm");
+    if (form) form.valor.value = "";
+    const err = $("payErr");
+    if (err) err.hidden = true;
+    paintPayDialog(jobs, true);
+    const dlg = $("payDlg");
+    if (dlg && !dlg.open) dlg.showModal();
+    if (form) form.valor.focus();
+  }
+  function paintPayDialog(jobs, resetDate) {
+    const dlg = $("payDlg");
+    if (!dlg || !dlg.open && !resetDate) return;
+    if (!payTarget) return;
+    const { from, to, label } = dashBounds();
+    const mine = (jobs || []).filter((x) => clientKey(x.cliente) === payTarget.key && inPeriod(x.data, from, to));
+    if (dlg.open && !mine.length) {
+      dlg.close();
+      payTarget = null;
+      return;
+    }
+    const bal = clientBalance(mine, from, to);
+    payTarget.total = bal.total;
+    payTarget.pago = bal.pago;
+    const title = $("payTitle");
+    if (title) title.textContent = "Receber — " + payTarget.cliente;
+    const summary = $("paySummary");
+    if (summary) {
+      const saldoTxt = bal.credito > 0 ? "Crédito " + money(bal.credito) : "Pendente " + money(bal.pendente);
+      summary.textContent = `${label} · ${fmtIso(from)} – ${fmtIso(to)} · ${fmtHours(bal.min)} · Total ${money(bal.total)} · Pago ${money(bal.pago)} · ${saldoTxt}`;
+    }
+    const form = $("payForm");
+    if (form && resetDate) {
+      const today = isoDate(startOfDay(now()));
+      form.data.value = today >= from && today <= to ? today : from;
+    }
+    const list = $("payList");
+    const rows = paymentsFor(payTarget.cliente, from, to);
+    if (list) {
+      list.innerHTML = rows.length
+        ? rows
+            .map(
+              (p) =>
+                `<li><span>${esc(fmtIso(p.data))} · ${esc(money(p.valor))}</span><button type="button" class="ghost" data-drop-pay="${esc(p.id)}">Remover</button></li>`
+            )
+            .join("")
+        : `<li class="empty">Nenhum valor neste período.</li>`;
+    }
+    refreshPayPreview();
+  }
+  function refreshPayPreview() {
+    const preview = $("payPreview");
+    const form = $("payForm");
+    if (!preview || !form || !payTarget) return;
+    const extra = parseMoneyInput(form.valor.value);
+    if (!(extra > 0)) {
+      preview.textContent = "O valor entra na data escolhida, dentro do período aberto no dashboard.";
+      return;
+    }
+    const saldo = round2((payTarget.total || 0) - (payTarget.pago || 0) - extra);
+    if (saldo > 0) preview.textContent = `Depois deste valor, o pendente fica ${money(saldo)}.`;
+    else if (saldo < 0) preview.textContent = `Depois deste valor, fica um crédito de ${money(-saldo)} para as próximas horas deste período.`;
+    else preview.textContent = "Depois deste valor, o período fica quitado.";
+  }
+  function openDiscDialog(cliente, jobs) {
+    discTarget = { key: clientKey(cliente), cliente };
+    const form = $("discForm");
+    if (form) form.valor.value = "";
+    const err = $("discErr");
+    if (err) err.hidden = true;
+    paintDiscDialog(jobs, true);
+    const dlg = $("discDlg");
+    if (dlg && !dlg.open) dlg.showModal();
+    if (form) form.valor.focus();
+  }
+  function paintDiscDialog(jobs, resetDate) {
+    const dlg = $("discDlg");
+    if (!dlg || (!dlg.open && !resetDate)) return;
+    if (!discTarget) return;
+    const { from, to, label } = dashBounds();
+    const mine = (jobs || []).filter((x) => clientKey(x.cliente) === discTarget.key && inPeriod(x.data, from, to));
+    if (dlg.open && !mine.length) {
+      dlg.close();
+      discTarget = null;
+      return;
+    }
+    const bal = clientBalance(mine, from, to);
+    discTarget.bruto = bal.bruto;
+    discTarget.desconto = bal.desconto;
+    discTarget.total = bal.total;
+    discTarget.pago = bal.pago;
+    discTarget.pendente = bal.pendente;
+    const title = $("discTitle");
+    if (title) title.textContent = "Desconto — " + discTarget.cliente;
+    const summary = $("discSummary");
+    if (summary) {
+      summary.textContent = `${label} · ${fmtIso(from)} – ${fmtIso(to)} · ${fmtHours(bal.min)} · Horas ${money(bal.bruto)} · Desconto ${money(bal.desconto)} · Total ${money(bal.total)} · Pendente ${money(bal.pendente)}`;
+    }
+    const form = $("discForm");
+    if (form && resetDate) {
+      const today = isoDate(startOfDay(now()));
+      form.data.value = today >= from && today <= to ? today : from;
+    }
+    const list = $("discList");
+    const rows = discountsFor(discTarget.cliente, from, to);
+    if (list) {
+      list.innerHTML = rows.length
+        ? rows
+            .map(
+              (p) =>
+                `<li><span>${esc(fmtIso(p.data))} · ${esc(money(p.valor))}</span><button type="button" class="ghost" data-drop-disc="${esc(p.id)}">Remover</button></li>`
+            )
+            .join("")
+        : `<li class="empty">Nenhum desconto neste período.</li>`;
+    }
+    refreshDiscPreview();
+  }
+  function refreshDiscPreview() {
+    const preview = $("discPreview");
+    const form = $("discForm");
+    if (!preview || !form || !discTarget) return;
+    const extra = parseMoneyInput(form.valor.value);
+    if (!(extra > 0)) {
+      preview.textContent = "Esse valor sai uma vez do total do período. Não multiplica pelas horas.";
+      return;
+    }
+    const room = round2(Math.max(0, (discTarget.bruto || 0) - (discTarget.desconto || 0)));
+    const aplicado = Math.min(extra, room);
+    const saldo = round2((discTarget.total || 0) - aplicado - (discTarget.pago || 0));
+    if (!(room > 0)) {
+      preview.textContent = "Não há mais valor para descontar neste período.";
+      return;
+    }
+    if (extra > room) preview.textContent = `O desconto não passa de ${money(room)}. O pendente fica ${money(Math.max(0, saldo))}.`;
+    else if (saldo > 0) preview.textContent = `Depois deste desconto, o pendente fica ${money(saldo)}.`;
+    else if (saldo < 0) preview.textContent = `Depois deste desconto, fica um crédito de ${money(-saldo)}.`;
+    else preview.textContent = "Depois deste desconto, o pendente fica R$ 0,00.";
   }
   async function renderDashFromStore() {
     renderDash(await store.all());
@@ -1418,6 +1732,7 @@
       end.className = "mini-slot end";
       end.textContent = "18:00";
       col.appendChild(end);
+      if (!used.size) col.classList.add("is-empty");
       grid.appendChild(col);
     }
     calendarEl.replaceChildren(grid);
@@ -1603,6 +1918,298 @@
     say("ok", `Salvei ${esc(editing.cliente)}.`);
   });
 
+  function startOptions() {
+    const out = [];
+    for (const w of WINDOWS) {
+      for (let t = w.start; t + SLOT <= w.end; t += SLOT) out.push(t);
+    }
+    return out;
+  }
+  function endOptions(start) {
+    const w = WINDOWS.find((win) => start >= win.start && start < win.end);
+    if (!w) return [];
+    const out = [];
+    for (let t = start + SLOT; t <= w.end; t += SLOT) out.push(t);
+    return out;
+  }
+  function monthStart(d) {
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+  function shiftMonth(d, n) {
+    return new Date(d.getFullYear(), d.getMonth() + n, 1);
+  }
+  function monthBounds() {
+    const today = startOfDay(now());
+    return {
+      min: new Date(today.getFullYear(), today.getMonth(), 1),
+      max: new Date(today.getFullYear(), today.getMonth() + 14, 1),
+    };
+  }
+  function bookableDays(month) {
+    const y = month.getFullYear();
+    const m = month.getMonth();
+    const last = new Date(y, m + 1, 0).getDate();
+    const today = startOfDay(now());
+    const out = [];
+    for (let d = 1; d <= last; d++) {
+      const dt = new Date(y, m, d);
+      if (dt < today || !isOpenDay(dt)) continue;
+      out.push(isoDate(dt));
+    }
+    return out;
+  }
+  function closeAdd() {
+    const box = $("addDlg");
+    if (box && box.open) box.close();
+    addWaitName = false;
+    if (cmd) cmd.placeholder = CMD_PLACEHOLDER;
+  }
+  function beginAddCliente() {
+    closeAdd();
+    addWaitName = true;
+    pending = null;
+    cmd.placeholder = "Nome do cliente. Ex.: Mearim Motos";
+    cmd.focus();
+    const tab = document.querySelector('.tab[data-panel="comandos"]');
+    if (tab) tab.click();
+    say("ok", "Qual o nome do cliente? Digita aqui embaixo e aperta Enviar.");
+  }
+  function openAddCalendar(cliente) {
+    addState.cliente = cliente;
+    addState.days = new Set();
+    addState.step = "dias";
+    addState.month = monthStart(startOfDay(now()));
+    paintAdd();
+    const box = $("addDlg");
+    if (box && !box.open) box.showModal();
+  }
+  function addParsed() {
+    const form = $("addForm");
+    const inicioMin = Number(form.inicio.value);
+    const fim = Number(form.fim.value);
+    const duracaoMin = fim - inicioMin;
+    const slots = [...addState.days].sort().map((data) => ({
+      data,
+      date: fromIso(data),
+      inicioMin,
+      duracaoMin,
+    }));
+    return {
+      cliente: addState.cliente,
+      servico: "Carro de som",
+      missing: [],
+      slots,
+      durationAssumed: false,
+    };
+  }
+  function fillEndOptions(prefer) {
+    const form = $("addForm");
+    if (!form) return;
+    const start = Number(form.inicio.value);
+    const ends = endOptions(start);
+    const keep = prefer != null ? prefer : Number(form.fim.value);
+    form.fim.innerHTML = ends.map((t) => `<option value="${t}">${minutesToHHMM(t)}</option>`).join("");
+    form.fim.value = String(ends.includes(keep) ? keep : ends[0] || "");
+  }
+  function fillAddTimes() {
+    const form = $("addForm");
+    if (!form) return;
+    const keepStart = Number(form.inicio.value) || hm("08:30");
+    form.inicio.innerHTML = startOptions().map((t) => `<option value="${t}">${minutesToHHMM(t)}</option>`).join("");
+    form.inicio.value = [...form.inicio.options].some((o) => Number(o.value) === keepStart)
+      ? String(keepStart)
+      : String(hm("08:30"));
+    const keepEnd = Number(form.fim.value) || hm("09:30");
+    fillEndOptions(keepEnd);
+  }
+  function paintAddCal() {
+    const cal = $("addCal");
+    if (!cal) return;
+    const { min, max } = monthBounds();
+    const month = addState.month;
+    const label = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    const y = month.getFullYear();
+    const m = month.getMonth();
+    const firstDow = (new Date(y, m, 1).getDay() + 6) % 7;
+    const last = new Date(y, m + 1, 0).getDate();
+    const today = startOfDay(now());
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) cells.push("<span></span>");
+    for (let d = 1; d <= last; d++) {
+      const dt = new Date(y, m, d);
+      const iso = isoDate(dt);
+      const shut = dt < today || !isOpenDay(dt);
+      const on = addState.days.has(iso);
+      cells.push(
+        `<button type="button" class="pick-day${on ? " is-on" : ""}" data-day="${iso}"${shut ? " disabled" : ""} aria-pressed="${on ? "true" : "false"}">${d}</button>`
+      );
+    }
+    const bookable = bookableDays(month);
+    const allOn = bookable.length > 0 && bookable.every((d) => addState.days.has(d));
+    const monthBtn = $("addMonth");
+    if (monthBtn) monthBtn.textContent = allOn ? "Limpar o mês" : "Mês todo";
+    cal.innerHTML = `<div class="pick-cal">
+      <div class="pick-nav">
+        <button type="button" data-month="-1"${month <= min ? " disabled" : ""} aria-label="Mês anterior">‹</button>
+        <strong>${esc(label)}</strong>
+        <button type="button" data-month="1"${month >= max ? " disabled" : ""} aria-label="Próximo mês">›</button>
+      </div>
+      <div class="pick-grid">
+        ${["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map((d) => `<span class="pick-dow">${d}</span>`).join("")}
+        ${cells.join("")}
+      </div>
+      <p class="pick-count">${addState.days.size ? `${addState.days.size} ${addState.days.size === 1 ? "dia marcado" : "dias marcados"}` : "Nenhum dia marcado."}</p>
+    </div>`;
+  }
+  function paintAdd() {
+    const err = $("addErr");
+    if (err) err.hidden = true;
+    const onDays = addState.step === "dias";
+    const time = $("addTime");
+    const cal = $("addCal");
+    const monthBtn = $("addMonth");
+    const next = $("addNext");
+    const back = $("addBack");
+    const title = $("addTitle");
+    const lead = $("addLead");
+    if (time) time.hidden = onDays;
+    if (cal) cal.hidden = !onDays;
+    if (monthBtn) monthBtn.hidden = !onDays;
+    if (title) title.textContent = onDays ? "Quais dias?" : "Qual horário?";
+    if (back) back.textContent = onDays ? "Fechar" : "Voltar";
+    if (onDays) {
+      if (lead) lead.textContent = `${addState.cliente}. Marca os dias. Domingo fica de fora.`;
+      if (next) {
+        next.textContent = "Próximo";
+        next.disabled = addState.days.size === 0;
+      }
+      paintAddCal();
+      return;
+    }
+    if (lead) lead.textContent = `${addState.cliente}. O mesmo horário vale em cada dia marcado.`;
+    if (next) next.textContent = "Marcar";
+    fillAddTimes();
+    refreshAddHint();
+  }
+  async function refreshAddHint() {
+    const hint = $("addTimeHint");
+    const next = $("addNext");
+    const err = $("addErr");
+    if (!hint || addState.step !== "horario") return;
+    const form = $("addForm");
+    const inicioMin = Number(form.inicio.value);
+    const fim = Number(form.fim.value);
+    if (!endOptions(inicioMin).includes(fim)) {
+      hint.textContent = "O fim fica na mesma parte do dia, sem atravessar o almoço.";
+      if (next) next.disabled = true;
+      return;
+    }
+    let list;
+    try {
+      list = await store.all();
+    } catch {
+      hint.textContent = "A agenda ainda está abrindo.";
+      if (next) next.disabled = true;
+      return;
+    }
+    const split = splitSlots(list, addParsed());
+    const faixa = `${minutesToHHMM(inicioMin)}–${minutesToHHMM(fim)}`;
+    const bits = [`${faixa} em ${split.ok.length} ${split.ok.length === 1 ? "dia livre" : "dias livres"}.`];
+    if (split.blocked.length) bits.push(`${split.blocked.length} ${split.blocked.length === 1 ? "dia não entra" : "dias não entram"}.`);
+    if (split.already.length) bits.push(`${split.already.length} já estavam com esse cliente.`);
+    hint.textContent = bits.join(" ");
+    if (next) next.disabled = split.ok.length === 0;
+    if (!err) return;
+    if (split.ok.length === 0) {
+      err.hidden = false;
+      err.textContent = split.blocked
+        .slice(0, 3)
+        .map((b) => (b.owner ? `${fmtLong(fromIso(b.s.data))} já está com ${b.owner}.` : `${fmtLong(fromIso(b.s.data))} não cabe nesse horário.`))
+        .join(" ");
+    } else err.hidden = true;
+  }
+
+  const addClienteBtn = $("addClienteBtn");
+  if (addClienteBtn) addClienteBtn.addEventListener("click", beginAddCliente);
+  const addCal = $("addCal");
+  if (addCal) {
+    addCal.addEventListener("click", (e) => {
+      const monthBtn = e.target.closest("[data-month]");
+      if (monthBtn && !monthBtn.disabled) {
+        addState.month = shiftMonth(addState.month, Number(monthBtn.dataset.month));
+        paintAddCal();
+        return;
+      }
+      const day = e.target.closest("[data-day]");
+      if (!day || day.disabled) return;
+      if (addState.days.has(day.dataset.day)) addState.days.delete(day.dataset.day);
+      else addState.days.add(day.dataset.day);
+      paintAdd();
+    });
+  }
+  const addMonthBtn = $("addMonth");
+  if (addMonthBtn) {
+    addMonthBtn.addEventListener("click", () => {
+      const days = bookableDays(addState.month);
+      const err = $("addErr");
+      if (!days.length) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Esse mês já passou.";
+        }
+        return;
+      }
+      const allOn = days.every((d) => addState.days.has(d));
+      for (const d of days) {
+        if (allOn) addState.days.delete(d);
+        else addState.days.add(d);
+      }
+      paintAdd();
+    });
+  }
+  const addBack = $("addBack");
+  if (addBack) {
+    addBack.addEventListener("click", () => {
+      if (addState.step === "horario") {
+        addState.step = "dias";
+        paintAdd();
+        return;
+      }
+      closeAdd();
+    });
+  }
+  const addCloseBtn = $("addClose");
+  if (addCloseBtn) addCloseBtn.addEventListener("click", closeAdd);
+  const addForm = $("addForm");
+  if (addForm) {
+    addForm.inicio.addEventListener("change", () => {
+      fillEndOptions();
+      refreshAddHint();
+    });
+    addForm.fim.addEventListener("change", () => refreshAddHint());
+    addForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        if (addState.step === "dias") {
+          if (!addState.days.size) return;
+          addState.step = "horario";
+          paintAdd();
+          return;
+        }
+        const parsed = addParsed();
+        const split = splitSlots(await store.all(), parsed);
+        if (!split.ok.length) {
+          await refreshAddHint();
+          return;
+        }
+        closeAdd();
+        await doBook(parsed);
+      } catch (err) {
+        say("bad", "Não consegui marcar: " + esc(err.message));
+      }
+    });
+  }
+
   $("cmdForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = cmd.value.trim();
@@ -1610,6 +2217,18 @@
     sayMe(text);
     cmd.value = "";
     try {
+      if (addWaitName) {
+        const nome = sanitizeClient(text) || text.trim();
+        if (!nome || nome.length < 2) {
+          addWaitName = true;
+          say("ok", "Não peguei o nome. Ex.: Mearim Motos.");
+          return;
+        }
+        addWaitName = false;
+        cmd.placeholder = CMD_PLACEHOLDER;
+        openAddCalendar(nome);
+        return;
+      }
       if (await continuePending(text)) return;
       await runCommand(text);
     } catch (err) {
@@ -1699,6 +2318,164 @@
     });
   }
   persistSettings();
+  const payForm = $("payForm");
+  if (payForm) {
+    payForm.valor.addEventListener("input", refreshPayPreview);
+    payForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const err = $("payErr");
+      if (!payTarget) return;
+      const valor = parseMoneyInput(payForm.valor.value);
+      const data = payForm.data.value;
+      const { from, to } = dashBounds();
+      if (!(valor > 0)) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Informe um valor maior que zero.";
+        }
+        return;
+      }
+      if (!data || data < from || data > to) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = `Escolha uma data entre ${fmtIso(from)} e ${fmtIso(to)}.`;
+        }
+        return;
+      }
+      if (err) err.hidden = true;
+      payments.push({
+        id: uid(),
+        cliente: payTarget.cliente,
+        data,
+        valor,
+        createdAt: new Date().toISOString(),
+      });
+      persistPayments();
+      payForm.valor.value = "";
+      render();
+    });
+  }
+  const payFill = $("payFill");
+  if (payFill) {
+    payFill.addEventListener("click", () => {
+      if (!payTarget || !payForm) return;
+      const pendente = round2((payTarget.total || 0) - (payTarget.pago || 0));
+      const err = $("payErr");
+      if (!(pendente > 0)) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Não há pendente neste período. Digite o adiantamento.";
+        }
+        return;
+      }
+      if (err) err.hidden = true;
+      payForm.valor.value = String(pendente).replace(".", ",");
+      refreshPayPreview();
+      payForm.valor.focus();
+    });
+  }
+  const payClose = $("payClose");
+  if (payClose) {
+    payClose.addEventListener("click", () => {
+      const dlg = $("payDlg");
+      if (dlg) dlg.close();
+      payTarget = null;
+    });
+  }
+  const discForm = $("discForm");
+  if (discForm) {
+    discForm.valor.addEventListener("input", refreshDiscPreview);
+    discForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const err = $("discErr");
+      if (!discTarget) return;
+      const typed = parseMoneyInput(discForm.valor.value);
+      const data = discForm.data.value;
+      const { from, to } = dashBounds();
+      const room = round2(Math.max(0, (discTarget.bruto || 0) - (discTarget.desconto || 0)));
+      if (!(typed > 0)) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Informe um desconto maior que zero.";
+        }
+        return;
+      }
+      if (!(room > 0)) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Não há valor para descontar neste período.";
+        }
+        return;
+      }
+      if (!data || data < from || data > to) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = `Escolha uma data entre ${fmtIso(from)} e ${fmtIso(to)}.`;
+        }
+        return;
+      }
+      if (err) err.hidden = true;
+      discounts.push({
+        id: uid(),
+        cliente: discTarget.cliente,
+        data,
+        valor: Math.min(typed, room),
+        createdAt: new Date().toISOString(),
+      });
+      persistDiscounts();
+      discForm.valor.value = "";
+      render();
+    });
+  }
+  const discFill = $("discFill");
+  if (discFill) {
+    discFill.addEventListener("click", () => {
+      if (!discTarget || !discForm) return;
+      const err = $("discErr");
+      const room = round2(Math.max(0, (discTarget.bruto || 0) - (discTarget.desconto || 0)));
+      const pendente = round2(discTarget.pendente || 0);
+      const valor = Math.min(room, pendente);
+      if (!(valor > 0)) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Não há pendente para descontar neste período.";
+        }
+        return;
+      }
+      if (err) err.hidden = true;
+      discForm.valor.value = String(valor).replace(".", ",");
+      refreshDiscPreview();
+      discForm.valor.focus();
+    });
+  }
+  const discClose = $("discClose");
+  if (discClose) {
+    discClose.addEventListener("click", () => {
+      const dlg = $("discDlg");
+      if (dlg) dlg.close();
+      discTarget = null;
+    });
+  }
+  const discList = $("discList");
+  if (discList) {
+    discList.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-drop-disc]");
+      if (!btn) return;
+      discounts = discounts.filter((p) => p.id !== btn.dataset.dropDisc);
+      persistDiscounts();
+      render();
+    });
+  }
+  const payList = $("payList");
+  if (payList) {
+    payList.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-drop-pay]");
+      if (!btn) return;
+      payments = payments.filter((p) => p.id !== btn.dataset.dropPay);
+      persistPayments();
+      render();
+    });
+  }
   const pagoBtn = $("pagoBtn");
   if (pagoBtn) {
     pagoBtn.addEventListener("click", () => {
@@ -1717,7 +2494,7 @@
     }
   });
 
-  say("ok", "Agenda do carro pronta. Segunda a sábado, 8:30–11:30 e 14:00–18:00. Domingo fechado. Manda o cliente e o horário.");
+  say("ok", "Agenda do carro pronta. Segunda a sábado, 8:30–11:30 e 14:00–18:00. Domingo fechado. Manda o cliente e o horário, ou clica em Adicionar cliente.");
 
   async function pullFile() {
     try {
