@@ -251,6 +251,10 @@
       });
     },
     async put(item) {
+      if (String(item.id || "").startsWith("a1b2c3d4")) {
+        await this.del(item.id);
+        return item;
+      }
       await this.putLocal(item);
       fetch(`${SUPABASE_URL}/rest/v1/agendamentos`, {
         method: "POST",
@@ -274,6 +278,7 @@
       const existing = await this.all();
       const byId = new Map(existing.map((x) => [x.id, x]));
       for (const raw of items) {
+        if (String(raw.id || "").startsWith("a1b2c3d4")) continue;
         const prev = byId.get(raw.id);
         if (prev && (raw.updatedAt || "") < (prev.updatedAt || "")) continue;
         const item = withFinance(raw);
@@ -314,6 +319,15 @@
 
         const state = cloudItems.find((x) => x.id === STATE_ID);
         let appts = cloudItems.filter((x) => x.id !== STATE_ID);
+        const copias = appts.filter((x) => String(x.id || "").startsWith("a1b2c3d4"));
+        if (copias.length) {
+          appts = appts.filter((x) => !String(x.id || "").startsWith("a1b2c3d4"));
+          const ids = copias.map((x) => x.id).join(",");
+          fetch(`${SUPABASE_URL}/rest/v1/agendamentos?id=in.(${ids})`, {
+            method: "DELETE",
+            headers: SUPABASE_HEADERS,
+          }).catch((e) => console.warn("Supabase cópia:", e));
+        }
         const mark = localStorage.getItem(SYNC_MARK) || "";
         // Sem marca anterior a nuvem manda: o celular não devolve agenda velha.
         if (mark) {
@@ -322,6 +336,7 @@
           const pending = [];
           for (const local of localItems) {
             const cloud = cloudMap.get(local.id);
+            if (String(local.id || "").startsWith("a1b2c3d4")) continue;
             if (stampMs(local.updatedAt) > stampMs(mark) && (!cloud || stampMs(local.updatedAt) > stampMs(cloud.updatedAt))) {
               pending.push(local);
             }
