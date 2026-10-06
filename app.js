@@ -135,6 +135,7 @@
   }
   function persistPayments() {
     localStorage.setItem(PAY_KEY, JSON.stringify(payments));
+    pushFinance();
   }
   function loadDiscounts() {
     try {
@@ -211,6 +212,9 @@
     "Authorization": "Bearer " + SUPABASE_KEY,
     "Content-Type": "application/json",
   };
+  const STATE_ID = "00000000-0000-4000-8000-0000000000a1";
+  const FINANCE_STAMP = "seiko-carro-som-finance-stamp";
+  const SYNC_MARK = "seiko-carro-som-cloud-mark";
 
   const store = {
     open() {
@@ -285,6 +289,19 @@
         }
       }
     },
+    async replaceAll(items) {
+      const existing = await this.all();
+      const keep = new Set(items.map((x) => x.id));
+      for (const old of existing) {
+        if (keep.has(old.id)) continue;
+        await new Promise((resolve, reject) => {
+          const r = this.tx("readwrite").delete(old.id);
+          r.onsuccess = () => resolve();
+          r.onerror = () => reject(r.error);
+        });
+      }
+      for (const raw of items) await this.putLocal(withFinance(raw));
+    },
     async pullCloud() {
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/agendamentos?select=*`, {
@@ -295,26 +312,47 @@
         const cloudItems = await res.json();
         if (!Array.isArray(cloudItems)) return false;
 
-        const localItems = await this.all();
-        const cloudMap = new Map(cloudItems.map((x) => [x.id, x]));
-
-        // Se houver itens locais que ainda não estão no Supabase, envia automaticamente
-        const toUpload = [];
-        for (const local of localItems) {
-          const cloud = cloudMap.get(local.id);
-          if (!cloud || (local.updatedAt || "") > (cloud.updatedAt || "")) {
-            toUpload.push(local);
+        const state = cloudItems.find((x) => x.id === STATE_ID);
+        let appts = cloudItems.filter((x) => x.id !== STATE_ID);
+        const mark = localStorage.getItem(SYNC_MARK) || "";
+        // Sem marca anterior a nuvem manda: o celular não devolve agenda velha.
+        if (mark) {
+          const localItems = (await this.all()).filter((x) => x.id !== STATE_ID);
+          const cloudMap = new Map(appts.map((x) => [x.id, x]));
+          const pending = [];
+          for (const local of localItems) {
+            const cloud = cloudMap.get(local.id);
+            if (stampMs(local.updatedAt) > stampMs(mark) && (!cloud || stampMs(local.updatedAt) > stampMs(cloud.updatedAt))) {
+              pending.push(local);
+            }
+          }
+          if (pending.length) {
+            await fetch(`${SUPABASE_URL}/rest/v1/agendamentos`, {
+              method: "POST",
+              headers: { ...SUPABASE_HEADERS, Prefer: "resolution=merge-duplicates" },
+              body: JSON.stringify(pending),
+            });
+            for (const item of pending) {
+              const i = appts.findIndex((x) => x.id === item.id);
+              if (i >= 0) appts[i] = item;
+              else appts.push(item);
+            }
+          }
+          const localIds = new Set(localItems.map((x) => x.id));
+          const dropped = appts.filter((x) => !localIds.has(x.id) && stampMs(x.updatedAt) <= stampMs(mark));
+          appts = appts.filter((x) => localIds.has(x.id) || stampMs(x.updatedAt) > stampMs(mark));
+          for (const item of pending) if (!appts.some((x) => x.id === item.id)) appts.push(item);
+          for (const item of dropped) {
+            fetch(`${SUPABASE_URL}/rest/v1/agendamentos?id=eq.${item.id}`, {
+              method: "DELETE",
+              headers: SUPABASE_HEADERS,
+            }).catch((e) => console.warn("Supabase del remoto:", e));
           }
         }
-        if (toUpload.length > 0) {
-          await fetch(`${SUPABASE_URL}/rest/v1/agendamentos`, {
-            method: "POST",
-            headers: { ...SUPABASE_HEADERS, "Prefer": "resolution=merge-duplicates" },
-            body: JSON.stringify(toUpload),
-          }).catch((e) => console.warn("Supabase upload novos:", e));
-        }
 
-        await this.importAll(cloudItems, false);
+        await this.replaceAll(appts);
+        await syncFinance(state);
+        localStorage.setItem(SYNC_MARK, new Date().toISOString());
         return true;
       } catch (e) {
         console.warn("Supabase pullCloud:", e);
@@ -323,8 +361,62 @@
     },
   };
 
+  function stampMs(s) {
+    const t = Date.parse(s || "");
+    return Number.isFinite(t) ? t : 0;
+  }
+  function applyFinance(row) {
+    let data;
+    try {
+      data = JSON.parse(row.observacoes || "");
+    } catch {
+      return;
+    }
+    if (typeof data.valorHora === "number" && data.valorHora >= 0) settings.valorHora = data.valorHora;
+    if (Array.isArray(data.payments)) payments = data.payments.map(normalizePayment).filter(Boolean);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(PAY_KEY, JSON.stringify(payments));
+    localStorage.setItem(FINANCE_STAMP, row.updatedAt || new Date().toISOString());
+    const hint = $("rateHint");
+    if (hint) hint.textContent = money(settings.valorHora) + "/h";
+    const rateEl = $("valorHora");
+    if (rateEl) rateEl.value = String(settings.valorHora);
+  }
+  async function syncFinance(row) {
+    const remote = row ? stampMs(row.updatedAt) : 0;
+    const local = stampMs(localStorage.getItem(FINANCE_STAMP) || "");
+    if (row && remote >= local) applyFinance(row);
+    else if (!row && payments.length) await pushFinance();
+    else if (row && local > remote) await pushFinance();
+  }
+  function pushFinance() {
+    const updatedAt = new Date().toISOString();
+    localStorage.setItem(FINANCE_STAMP, updatedAt);
+    const row = {
+      id: STATE_ID,
+      serieId: STATE_ID,
+      cliente: "sistema",
+      servico: "sistema",
+      data: "1970-01-01",
+      inicioMin: 0,
+      duracaoMin: 30,
+      observacoes: JSON.stringify({ valorHora: settings.valorHora, payments }),
+      desconto: 0,
+      descontoHora: 0,
+      pago: false,
+      status: "cancelado",
+      createdAt: updatedAt,
+      updatedAt,
+    };
+    return fetch(`${SUPABASE_URL}/rest/v1/agendamentos`, {
+      method: "POST",
+      headers: { ...SUPABASE_HEADERS, Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify(row),
+    }).catch((e) => console.warn("Supabase financeiro:", e));
+  }
+
   function active(list) {
-    return list.filter((x) => x.status === "ativo");
+    return list.filter((x) => x.status === "ativo" && x.id !== STATE_ID);
   }
   function onDate(list, iso) {
     return active(list).filter((x) => x.data === iso).sort((a, b) => a.inicioMin - b.inicioMin);
@@ -2374,6 +2466,7 @@
       const v = Number(rateEl.value);
       settings.valorHora = Number.isFinite(v) && v >= 0 ? v : DEFAULT_RATE;
       persistSettings();
+      pushFinance();
       refreshEditTotal();
       renderDashFromStore();
     });
