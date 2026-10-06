@@ -204,6 +204,14 @@
     return a0 < b1 && b0 < a1;
   }
 
+  const SUPABASE_URL = "https://mnxunivgnkavaozsujqb.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_KycpGuWzivMP2Wnrzudgeg_uApYV1fq";
+  const SUPABASE_HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": "Bearer " + SUPABASE_KEY,
+    "Content-Type": "application/json",
+  };
+
   const store = {
     open() {
       return new Promise((resolve, reject) => {
@@ -231,21 +239,34 @@
         r.onerror = () => reject(r.error);
       });
     },
-    put(item) {
+    putLocal(item) {
       return new Promise((resolve, reject) => {
         const r = this.tx("readwrite").put(item);
         r.onsuccess = () => resolve(item);
         r.onerror = () => reject(r.error);
       });
     },
-    del(id) {
-      return new Promise((resolve, reject) => {
+    async put(item) {
+      await this.putLocal(item);
+      fetch(`${SUPABASE_URL}/rest/v1/agendamentos`, {
+        method: "POST",
+        headers: { ...SUPABASE_HEADERS, "Prefer": "resolution=merge-duplicates" },
+        body: JSON.stringify(item),
+      }).catch((e) => console.warn("Supabase put:", e));
+      return item;
+    },
+    async del(id) {
+      await new Promise((resolve, reject) => {
         const r = this.tx("readwrite").delete(id);
         r.onsuccess = () => resolve();
         r.onerror = () => reject(r.error);
       });
+      fetch(`${SUPABASE_URL}/rest/v1/agendamentos?id=eq.${id}`, {
+        method: "DELETE",
+        headers: SUPABASE_HEADERS,
+      }).catch((e) => console.warn("Supabase del:", e));
     },
-    async importAll(items) {
+    async importAll(items, syncToCloud = false) {
       const existing = await this.all();
       const byId = new Map(existing.map((x) => [x.id, x]));
       for (const raw of items) {
@@ -257,8 +278,48 @@
           if (!("descontoHora" in raw)) item.descontoHora = prev.descontoHora;
           if (!("pago" in raw)) item.pago = prev.pago;
         }
-        await this.put(item);
+        if (syncToCloud) {
+          await this.put(item);
+        } else {
+          await this.putLocal(item);
+        }
       }
+    },
+    async pullCloud() {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/agendamentos?select=*`, {
+          headers: SUPABASE_HEADERS,
+          cache: "no-store",
+        });
+        if (!res.ok) return false;
+        const cloudItems = await res.json();
+        if (!Array.isArray(cloudItems)) return false;
+
+        const localItems = await this.all();
+        const cloudMap = new Map(cloudItems.map((x) => [x.id, x]));
+
+        // Se houver itens locais que ainda não estão no Supabase, envia automaticamente
+        const toUpload = [];
+        for (const local of localItems) {
+          const cloud = cloudMap.get(local.id);
+          if (!cloud || (local.updatedAt || "") > (cloud.updatedAt || "")) {
+            toUpload.push(local);
+          }
+        }
+        if (toUpload.length > 0) {
+          await fetch(`${SUPABASE_URL}/rest/v1/agendamentos`, {
+            method: "POST",
+            headers: { ...SUPABASE_HEADERS, "Prefer": "resolution=merge-duplicates" },
+            body: JSON.stringify(toUpload),
+          }).catch((e) => console.warn("Supabase upload novos:", e));
+        }
+
+        await this.importAll(cloudItems, false);
+        return true;
+      } catch (e) {
+        console.warn("Supabase pullCloud:", e);
+      }
+      return false;
     },
   };
 
@@ -2501,13 +2562,24 @@
       const res = await fetch("data/agenda.json?t=" + Date.now(), { cache: "no-store" });
       if (!res.ok) return;
       const items = await res.json();
-      if (Array.isArray(items) && items.length) await store.importAll(items);
+      if (Array.isArray(items) && items.length) await store.importAll(items, false);
     } catch (_) { /* arquivo opcional */ }
   }
 
   store.open().then(async (d) => {
     db = d;
-    await pullFile();
+    render();
+    const cloudOk = await store.pullCloud();
+    if (!cloudOk) {
+      await pullFile();
+    }
     render();
   }).catch((err) => say("bad", "Banco local não abriu: " + err.message));
+
+  window.addEventListener("focus", async () => {
+    if (await store.pullCloud()) render();
+  });
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden && (await store.pullCloud())) render();
+  });
 })();
