@@ -215,8 +215,8 @@ button, input, select, textarea, .mday, tr, .slot .bar, .mini-slot {
   max-width: 1400px;
   margin: 0 auto;
   display: flex;
-  padding: 0 max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
-  gap: 6px;
+  padding: 8px max(24px, env(safe-area-inset-right)) 8px max(24px, env(safe-area-inset-left));
+  gap: 12px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -227,29 +227,32 @@ button, input, select, textarea, .mday, tr, .slot .bar, .mini-slot {
 }
 
 .tab {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
-  padding: 12px 18px 10px;
+  padding: 8px 20px;
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.01em;
-  border: 0;
-  border-bottom: 2px solid transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
   cursor: pointer;
-  border-radius: 8px 8px 0 0;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
 }
 
 .tab:hover {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15), 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .tab.is-on {
   color: #ffffff;
   font-weight: 600;
-  border-bottom-color: var(--gold);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--gold);
+  background: var(--cab);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* ==========================================================================
@@ -360,37 +363,37 @@ button, input, select, textarea, .mday, tr, .slot .bar, .mini-slot {
 /* Segmented Control (Views) */
 .views {
   display: inline-flex;
-  gap: 3px;
-  background: rgba(0, 0, 0, 0.35);
-  padding: 4px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
+  gap: 8px;
 }
 
 .views button {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
-  border: 0;
-  border-radius: 7px;
-  height: 32px;
-  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  height: 34px;
+  padding: 0 16px;
   font-family: 'Inter', sans-serif;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.01em;
   cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
 }
 
 .views button:hover {
   color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 }
 
 .views button.is-on {
   background: var(--cab);
   color: #fff;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* Focus styles */
@@ -1424,12 +1427,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .dash .views {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-    padding: 4px;
+    gap: 8px;
+    padding: 0;
   }
 
   .dash .views button {
-    height: 36px;
+    height: 38px;
     font-size: 13px;
     width: 100%;
   }
@@ -1551,12 +1554,13 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   }
 
   .tabs {
-    padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
+    padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
+    gap: 8px;
   }
   .tab {
     flex: 1;
     min-height: var(--tap);
-    padding: 12px 6px 10px;
+    padding: 8px 6px;
     text-align: center;
     font-size: 14px;
   }
@@ -1586,6 +1590,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
     width: 100%;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
   }
   #panel-agenda .views button { width: 100%; }
 
