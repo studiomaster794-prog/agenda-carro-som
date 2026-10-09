@@ -8,7 +8,7 @@
     { start: hm("14:00"), end: hm("18:00") },
   ];
   const SLOT = 30;
-  const COLORS = ["#c23b2e", "#1c2740", "#1f7a6a", "#3d4f7a", "#8a4a1f", "#2a9d8f", "#5c3d7a"];
+  const COLORS = ["#2563eb", "#0d9488", "#7c3aed", "#d97706", "#059669", "#e11d48", "#4f46e5", "#0891b2"];
   const SETTINGS_KEY = "seiko-carro-som-settings";
   const PAY_KEY = "seiko-carro-som-pagamentos";
   const DISC_KEY = "seiko-carro-som-descontos";
@@ -1411,8 +1411,11 @@
               const s = clientBalance(r.jobs, from, to);
               const pendenteTxt = s.credito > 0 ? "Crédito " + money(s.credito) : money(s.pendente);
               const horaTxt = s.horaFica == null ? "—" : money(s.horaFica);
-              return `<tr data-key="${esc(clientKey(r.cliente))}">
-                <td data-label="Cliente">${esc(r.cliente)}</td>
+              return `<tr class="is-collapsed" data-key="${esc(clientKey(r.cliente))}">
+                <td data-label="Cliente">
+                  <span class="cname">${esc(r.cliente)}</span>
+                  <button type="button" class="expander" aria-label="Expandir detalhes">▲</button>
+                </td>
                 <td class="num" data-label="Horas">${esc(fmtHours(s.min))}</td>
                 <td class="num" data-label="Desc./h"><input class="mini" data-desc-hora inputmode="decimal" value="${esc(moneyInput(s.descHora))}" placeholder="0" aria-label="Desconto por hora de ${esc(r.cliente)}"></td>
                 <td class="num" data-label="Hora fica">${esc(horaTxt)}</td>
@@ -1427,12 +1430,41 @@
       clientBody.querySelectorAll("tr[data-key]").forEach((tr) => {
         const pack = byClient.get(tr.dataset.key);
         if (!pack) return;
-        tr.cells[0].onclick = () => {
-          histCliente = pack.cliente;
-          const sel = $("histCliente");
-          if (sel) sel.value = histCliente;
-          renderDashFromStore();
-        };
+
+        const expander = tr.querySelector(".expander");
+        if (expander) {
+          const toggle = () => {
+            if (window.innerWidth <= 860) {
+              tr.classList.toggle("is-collapsed");
+              expander.textContent = tr.classList.contains("is-collapsed") ? "▼" : "▲";
+            }
+          };
+          tr.onclick = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+            toggle();
+          };
+          expander.onclick = (e) => {
+            e.stopPropagation();
+            toggle();
+          };
+        }
+
+        const cname = tr.querySelector(".cname");
+        if (cname) {
+          cname.onclick = (e) => {
+            e.stopPropagation();
+            if (window.innerWidth <= 860) {
+               // no mobile, nome também expande (em vez de filtrar, porque sumiu a seta antes)
+               if (expander) expander.click();
+               return;
+            }
+            histCliente = pack.cliente;
+            const sel = $("histCliente");
+            if (sel) sel.value = histCliente;
+            renderDashFromStore();
+          };
+        }
+
         const descInput = tr.querySelector("[data-desc-hora]");
         if (descInput) {
           descInput.addEventListener("click", (e) => e.stopPropagation());
@@ -1890,7 +1922,7 @@
           col.appendChild(el);
         } else {
           const el = document.createElement("div");
-          el.className = "mini-slot";
+          el.className = "mini-slot is-free";
           el.textContent = minutesToHHMM(t);
           el.onclick = () => quickBook(iso, t);
           col.appendChild(el);
@@ -2426,6 +2458,12 @@
       render();
     };
   });
+  document.querySelectorAll(".dlg").forEach(d => {
+    d.addEventListener("click", e => {
+      if (e.target === d) d.close();
+    });
+  });
+
   document.querySelectorAll(".tab").forEach((b) => {
     b.onclick = () => {
       const panel = b.dataset.panel;
