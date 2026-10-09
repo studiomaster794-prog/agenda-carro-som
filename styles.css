@@ -779,6 +779,30 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   color: #fb923c;
 }
 
+.kpi.is-gross b {
+  color: #34d399; /* Verde (Emerald-400) */
+}
+
+.kpi.is-discount b {
+  color: #f87171; /* Vermelho (Red-400) */
+}
+
+.kpi.is-total b {
+  color: var(--gold-light); /* Dourado */
+}
+
+.kpi.is-hours b {
+  color: #38bdf8; /* Azul (Sky-400) */
+}
+
+.kpi.is-clients b {
+  color: #c084fc; /* Roxo (Purple-400) */
+}
+
+.kpi.is-jobs b {
+  color: #818cf8; /* Anil (Indigo-400) */
+}
+
 .dash-h {
   margin: 20px 0 10px;
   font-family: 'Inter', sans-serif;

@@ -1385,14 +1385,14 @@
     const kpis = $("dashKpis");
     if (kpis) {
       const cells = [
-        [fmtHours(totals.min), "Horas trabalhadas"],
-        [money(totals.bruto), "Valor bruto"],
-        [money(totals.desconto), "Descontos"],
-        [money(totals.total), "Total final"],
+        [fmtHours(totals.min), "Horas trabalhadas", "is-hours"],
+        [money(totals.bruto), "Valor bruto", "is-gross"],
+        [money(totals.desconto), "Descontos", "is-discount"],
+        [money(totals.total), "Total final", "is-total"],
         [money(totals.recebido), "Recebido", "is-in"],
         [money(totals.pendente), "Pendente", "is-out"],
-        [String(totals.ids.size), "Clientes atendidos"],
-        [String(jobs.length), "Quantidade de serviços"],
+        [String(totals.ids.size), "Clientes atendidos", "is-clients"],
+        [String(jobs.length), "Quantidade de serviços", "is-jobs"],
       ];
       kpis.innerHTML = cells
         .map(
