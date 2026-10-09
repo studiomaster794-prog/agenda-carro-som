@@ -248,11 +248,30 @@ button, input, select, textarea, .mday, tr, .slot .bar, .mini-slot {
 }
 
 .tab.is-on {
-  color: #ffffff;
   font-weight: 600;
-  border: 1px solid var(--gold);
   background: var(--cab);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Cores específicas para cada aba principal */
+.tab[data-panel="agenda"]:hover { color: #bae6fd; }
+.tab[data-panel="agenda"].is-on {
+  color: #38bdf8;
+  border: 1px solid #38bdf8;
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.tab[data-panel="dashboard"]:hover { color: #fde68a; }
+.tab[data-panel="dashboard"].is-on {
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.tab[data-panel="comandos"]:hover { color: #e9d5ff; }
+.tab[data-panel="comandos"].is-on {
+  color: #c084fc;
+  border: 1px solid #c084fc;
+  box-shadow: 0 4px 12px rgba(192, 132, 252, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* ==========================================================================
@@ -389,11 +408,37 @@ button, input, select, textarea, .mday, tr, .slot .bar, .mini-slot {
 }
 
 .views button.is-on {
-  background: var(--cab);
-  color: #fff;
   font-weight: 600;
-  border-color: rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: var(--cab);
+}
+
+/* Cores específicas para os filtros de data */
+.views button[data-range="hoje"]:hover { color: #a7f3d0; }
+.views button[data-range="hoje"].is-on {
+  color: #34d399;
+  border-color: #34d399;
+  box-shadow: 0 4px 12px rgba(52, 211, 153, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.views button[data-range="semana"]:hover { color: #bae6fd; }
+.views button[data-range="semana"].is-on {
+  color: #38bdf8;
+  border-color: #38bdf8;
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.views button[data-range="mes"]:hover { color: #fbcfe8; }
+.views button[data-range="mes"].is-on {
+  color: #f472b6;
+  border-color: #f472b6;
+  box-shadow: 0 4px 12px rgba(244, 114, 182, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.views button[data-range="periodo"]:hover { color: #fed7aa; }
+.views button[data-range="periodo"].is-on {
+  color: #fb923c;
+  border-color: #fb923c;
+  box-shadow: 0 4px 12px rgba(251, 146, 60, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* Focus styles */
