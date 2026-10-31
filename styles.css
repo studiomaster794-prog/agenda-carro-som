@@ -1174,26 +1174,24 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 /* Navegação horizontal rápida de dias na semana (Pills) */
 .week-days-nav {
   display: flex;
-  gap: 8px;
-  padding: 6px 4px 12px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  gap: 4px;
+  padding: 4px 0 10px;
+  width: 100%;
+  box-sizing: border-box;
 }
-.week-days-nav::-webkit-scrollbar { display: none; }
 
 .day-nav-pill {
-  flex: 1;
-  min-width: 58px;
-  padding: 8px 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 2px;
   background: var(--paper-2);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   cursor: pointer;
   transition: all 0.2s ease;
   color: var(--muted);

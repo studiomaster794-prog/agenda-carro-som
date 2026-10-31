@@ -1,4 +1,4 @@
-const CACHE = "agenda-carro-som-v15";
+const CACHE = "agenda-carro-som-v16";
 const ARQUIVOS = [
   "./",
   "./index.html",
