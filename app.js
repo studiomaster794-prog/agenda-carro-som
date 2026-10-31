@@ -8,7 +8,7 @@
     { start: hm("14:00"), end: hm("18:00") },
   ];
   const SLOT = 30;
-  const COLORS = ["#2563eb", "#0d9488", "#7c3aed", "#d97706", "#059669", "#e11d48", "#4f46e5", "#0891b2"];
+  const COLORS = ["#10b981", "#ef4444", "#2563eb", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899", "#14b8a6"];
   const SETTINGS_KEY = "seiko-carro-som-settings";
   const PAY_KEY = "seiko-carro-som-pagamentos";
   const DISC_KEY = "seiko-carro-som-descontos";
@@ -87,9 +87,20 @@
     return OPEN_DAYS.has(weekday(d));
   }
   function colorFor(name) {
+    const norm = (name || "").toLowerCase().trim();
+    if (norm.includes("mearim") || norm.includes("mearin")) return "#10b981"; // Verde vibrante
+    if (norm.includes("mulek")) return "#ef4444"; // Vermelho vibrante
+    if (norm.includes("claudio") || norm.includes("cunha")) return "#2563eb"; // Azul vibrante
     let h = 0;
     for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     return COLORS[h % COLORS.length];
+  }
+  function iconForClient(name) {
+    const norm = (name || "").toLowerCase().trim();
+    if (norm.includes("moto") || norm.includes("mearim") || norm.includes("mearin")) return "🏍️";
+    if (norm.includes("carro") || norm.includes("mulek") || norm.includes("auto")) return "🚗";
+    if (norm.includes("claudio") || norm.includes("cunha") || norm.includes("joao") || norm.includes("maria")) return "👤";
+    return "📢";
   }
   function uid() {
     return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random();
@@ -1285,6 +1296,7 @@
       if (b.dataset.view) b.classList.toggle("is-on", b.dataset.view === view);
     });
     renderDash(list);
+    updateSidebarAndLegend(list);
   }
 
   function dashBounds() {
@@ -1831,111 +1843,414 @@
     renderDash(await store.all());
   }
 
+  function formatWeekTitle(start, end) {
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    if (start.getMonth() === end.getMonth()) {
+      return `Semana de ${start.getDate()} a ${end.getDate()} de ${meses[start.getMonth()]}`;
+    }
+    return `Semana de ${start.getDate()} de ${meses[start.getMonth()]} a ${end.getDate()} de ${meses[end.getMonth()]}`;
+  }
+
+  function formatDayTitle(d) {
+    const dias = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    return `${dias[d.getDay()]}, ${d.getDate()} de ${meses[d.getMonth()]}`;
+  }
+
+  function updateSidebarAndLegend(list) {
+    const clientsLegend = $("clientsLegend");
+    const mobileLegend = $("mobileClientsLegend");
+    const totalSemanaEl = $("sidebarTotalSemana");
+    const livreAgoraEl = $("sidebarLivreAgora");
+
+    const activeItems = (list || []).filter((x) => x.status === "ativo");
+    const clientSet = new Set(activeItems.map((x) => x.cliente));
+
+    const defaultNames = ["Mearim Motos", "Mulek 10", "Claudio Cunha"];
+    const namesToShow = [];
+    defaultNames.forEach((n) => namesToShow.push(n));
+    clientSet.forEach((n) => {
+      if (!namesToShow.some((x) => x.toLowerCase() === n.toLowerCase())) {
+        namesToShow.push(n);
+      }
+    });
+    const finalLegend = namesToShow.slice(0, 3);
+    finalLegend.push("Outros");
+
+    const legendHtml = finalLegend
+      .map(
+        (name) => `
+        <div class="legend-row">
+          <span class="legend-circle" style="background: ${colorFor(name)};"></span>
+          <span class="legend-text">${esc(name)}</span>
+        </div>`
+      )
+      .join("");
+
+    if (clientsLegend) clientsLegend.innerHTML = legendHtml;
+    if (mobileLegend) mobileLegend.innerHTML = legendHtml;
+
+    if (totalSemanaEl) {
+      const start = mondayOf(cursor);
+      const end = addDays(start, 5);
+      const startIso = isoDate(start);
+      const endIso = isoDate(end);
+      const count = activeItems.filter((x) => x.data >= startIso && x.data <= endIso).length;
+      totalSemanaEl.textContent = `${count} ${count === 1 ? "Agendamento" : "Agendamentos"}`;
+    }
+
+    if (livreAgoraEl) {
+      const n = now();
+      const currMin = n.getHours() * 60 + n.getMinutes();
+      const hojeIso = isoDate(n);
+      const isDom = n.getDay() === 0;
+
+      if (isDom) {
+        livreAgoraEl.textContent = "Domingo — Carro parado";
+      } else if (currMin < hm("08:30")) {
+        livreAgoraEl.textContent = "Livre a partir de 08:30";
+      } else if (currMin >= hm("11:30") && currMin < hm("14:00")) {
+        livreAgoraEl.textContent = "Intervalo até 14:00";
+      } else if (currMin >= hm("18:00")) {
+        livreAgoraEl.textContent = "Fim do expediente hoje";
+      } else {
+        const itemsHoje = activeItems.filter((x) => x.data === hojeIso);
+        const busy = itemsHoje.find((x) => currMin >= x.inicioMin && currMin < x.inicioMin + x.duracaoMin);
+        if (busy) {
+          livreAgoraEl.textContent = `Ocupado até ${minutesToHHMM(busy.inicioMin + busy.duracaoMin)}`;
+        } else {
+          const diaAbbr = WEEKDAYS_SHORT[weekday(n)];
+          const cap = diaAbbr.charAt(0).toUpperCase() + diaAbbr.slice(1);
+          livreAgoraEl.textContent = `${cap} ${pad(n.getHours())}:${pad(n.getMinutes())} em diante`;
+        }
+      }
+    }
+  }
+
   function renderDay(list) {
-    periodTitle.textContent = fmtLong(cursor);
+    periodTitle.textContent = formatDayTitle(cursor);
     const iso = isoDate(cursor);
     const wrap = document.createElement("div");
-    wrap.className = "day-log";
+    wrap.className = "day-timeline-view";
+
     if (!isOpenDay(cursor)) {
-      wrap.innerHTML = `<div class="slot is-closed">Domingo — carro parado.</div>`;
+      wrap.innerHTML = `<div class="day-closed-card">Domingo — carro parado.</div>`;
       calendarEl.replaceChildren(wrap);
       return;
     }
+
     const items = onDate(list, iso);
-    let last = null;
-    for (const t of slotsOfDay()) {
-      if (last != null && t > last + SLOT) {
-        const closed = document.createElement("div");
-        closed.className = "slot is-closed";
-        closed.textContent = "Almoço · 11:30–14:00";
-        wrap.appendChild(closed);
-      }
-      last = t;
-      const hit = items.find((x) => t >= x.inicioMin && t < x.inicioMin + x.duracaoMin);
-      const row = document.createElement("div");
-      row.className = "slot " + (hit ? "is-busy" : "is-free");
-      const time = document.createElement("time");
-      time.textContent = minutesToHHMM(t);
-      const bar = document.createElement("div");
-      bar.className = "bar";
-      if (hit && t === hit.inicioMin) {
-        bar.style.background = colorFor(hit.cliente);
-        bar.innerHTML = `<span class="who">${esc(hit.cliente)}</span> <span class="meta">${minutesToHHMM(hit.inicioMin)}–${minutesToHHMM(hit.inicioMin + hit.duracaoMin)} · ${hit.duracaoMin / 60}h</span>`;
-        bar.onclick = () => openEdit(hit);
-      } else if (hit) {
-        bar.style.background = colorFor(hit.cliente);
-        bar.style.opacity = ".85";
+    const morningSlots = [510, 540, 570, 600, 630, 660, 690];
+    const afternoonSlots = [840, 870, 900, 930, 960, 990, 1020, 1050];
+
+    const axisCol = document.createElement("div");
+    axisCol.className = "timeline-axis";
+
+    const allTimes = [
+      ...morningSlots.map((t) => ({ time: t, type: "slot" })),
+      { time: 690, type: "break" },
+      ...afternoonSlots.map((t) => ({ time: t, type: "slot" })),
+    ];
+
+    allTimes.forEach((item, idx) => {
+      const node = document.createElement("div");
+      node.className = "timeline-node" + (item.type === "break" ? " is-break" : "");
+      if (item.type === "break") {
+        node.innerHTML = `<span class="time-text">11:30</span><span class="time-dot"></span>`;
       } else {
-        bar.textContent = "livre";
-        bar.onclick = () => quickBook(iso, t);
+        node.innerHTML = `<span class="time-text">${minutesToHHMM(item.time)}</span><span class="time-dot"></span>`;
       }
-      row.append(time, bar);
-      wrap.appendChild(row);
+      axisCol.appendChild(node);
+    });
+
+    const cardsCol = document.createElement("div");
+    cardsCol.className = "timeline-cards";
+
+    // Manhã
+    const morningItems = items.filter((x) => x.inicioMin < 720);
+    if (morningItems.length > 0) {
+      morningItems.forEach((hit) => {
+        const card = document.createElement("div");
+        card.className = "timeline-card";
+        card.style.background = colorFor(hit.cliente);
+        card.innerHTML = `
+          <div class="card-head">
+            <div class="client-ident">
+              <span class="client-icon">${iconForClient(hit.cliente)}</span>
+              <strong class="client-name">${esc(hit.cliente)}</strong>
+            </div>
+            <span class="card-status-badge">✔ Confirmado</span>
+          </div>
+          <div class="card-meta">
+            <span class="meta-clock">🕒</span>
+            <span>${minutesToHHMM(hit.inicioMin)} – ${minutesToHHMM(hit.inicioMin + hit.duracaoMin)}</span>
+          </div>
+        `;
+        card.onclick = () => openEdit(hit);
+        cardsCol.appendChild(card);
+      });
+    } else {
+      const freeMorning = document.createElement("button");
+      freeMorning.type = "button";
+      freeMorning.className = "timeline-free-btn";
+      freeMorning.textContent = "+ Manhã livre (08:30 às 11:30) · Agendar";
+      freeMorning.onclick = () => quickBook(iso, 510);
+      cardsCol.appendChild(freeMorning);
     }
-    const end = document.createElement("div");
-    end.className = "slot is-closed is-end";
-    end.innerHTML = `<time>18:00</time><div>fim do expediente</div>`;
-    wrap.appendChild(end);
+
+    // Intervalo de almoço
+    const breakCard = document.createElement("div");
+    breakCard.className = "timeline-lunch-banner";
+    breakCard.innerHTML = `<span class="lunch-fork">🍴</span> Intervalo – 11:30 às 14:00`;
+    cardsCol.appendChild(breakCard);
+
+    // Tarde
+    const afternoonItems = items.filter((x) => x.inicioMin >= 840);
+    if (afternoonItems.length > 0) {
+      afternoonItems.forEach((hit) => {
+        const card = document.createElement("div");
+        card.className = "timeline-card";
+        card.style.background = colorFor(hit.cliente);
+        card.innerHTML = `
+          <div class="card-head">
+            <div class="client-ident">
+              <span class="client-icon">${iconForClient(hit.cliente)}</span>
+              <strong class="client-name">${esc(hit.cliente)}</strong>
+            </div>
+            <span class="card-status-badge">✔ Confirmado</span>
+          </div>
+          <div class="card-meta">
+            <span class="meta-clock">🕒</span>
+            <span>${minutesToHHMM(hit.inicioMin)} – ${minutesToHHMM(hit.inicioMin + hit.duracaoMin)}</span>
+          </div>
+        `;
+        card.onclick = () => openEdit(hit);
+        cardsCol.appendChild(card);
+      });
+    } else {
+      const freeAfternoon = document.createElement("button");
+      freeAfternoon.type = "button";
+      freeAfternoon.className = "timeline-free-btn";
+      freeAfternoon.textContent = "+ Tarde livre (14:00 às 18:00) · Agendar";
+      freeAfternoon.onclick = () => quickBook(iso, 840);
+      cardsCol.appendChild(freeAfternoon);
+    }
+
+    wrap.append(axisCol, cardsCol);
     calendarEl.replaceChildren(wrap);
   }
 
   function renderWeek(list) {
     const start = addDays(cursor, cursor.getDay() === 0 ? 1 : 1 - cursor.getDay());
     const end = addDays(start, 5);
-    periodTitle.textContent = `${pad(start.getDate())}/${pad(start.getMonth() + 1)} – ${pad(end.getDate())}/${pad(end.getMonth() + 1)}`;
-    const grid = document.createElement("div");
-    grid.className = "week";
+    periodTitle.textContent = formatWeekTitle(start, end);
+
+    const weekWrapper = document.createElement("div");
+    weekWrapper.className = "week-wrapper";
+
     const todayIso = isoDate(startOfDay(now()));
+    const days = [];
     for (let i = 0; i < 6; i++) {
       const d = addDays(start, i);
-      const iso = isoDate(d);
-      const col = document.createElement("div");
-      col.className = "week-col" + (iso === todayIso ? " today" : "");
-      const h = document.createElement("header");
-      h.textContent = `${WEEKDAYS_SHORT[weekday(d)]} ${d.getDate()}`;
-      h.onclick = () => {
-        cursor = d;
+      days.push({
+        date: d,
+        iso: isoDate(d),
+        label: `${WEEKDAYS_SHORT[weekday(d)]} ${d.getDate()}/${pad(d.getMonth() + 1)}`,
+        weekdayShort: WEEKDAYS_SHORT[weekday(d)],
+        dayNum: `${d.getDate()}/${pad(d.getMonth() + 1)}`,
+      });
+    }
+
+    // Navegação rápida de dias (Pills no topo para mobile e desktop)
+    const daysNav = document.createElement("div");
+    daysNav.className = "week-days-nav";
+    days.forEach((d, idx) => {
+      const pill = document.createElement("button");
+      pill.type = "button";
+      const dayItems = onDate(list, d.iso);
+      const isToday = d.iso === todayIso;
+      pill.className = "day-nav-pill" + (isToday ? " is-today" : "") + (dayItems.length ? " has-jobs" : "");
+      pill.innerHTML = `
+        <span class="pill-name">${d.weekdayShort}</span>
+        <span class="pill-date">${d.dayNum}</span>
+        <span class="pill-dot"></span>
+      `;
+      pill.title = `${d.label} (${dayItems.length ? dayItems.length + " agendamento(s)" : "livre"}). Toque para focar, toque no cabeçalho para ver o dia.`;
+      pill.onclick = () => {
+        daysNav.querySelectorAll(".day-nav-pill").forEach((p) => p.classList.remove("is-active"));
+        pill.classList.add("is-active");
+        const targetLeft = idx === 0 ? 0 : Math.max(0, 44 + idx * 82 - 50);
+        weekCard.scrollTo({ left: targetLeft, behavior: "smooth" });
+      };
+      pill.ondblclick = () => {
+        cursor = d.date;
         view = "dia";
         render();
       };
-      col.appendChild(h);
-      const items = onDate(list, iso);
-      const used = new Set();
-      let last = null;
-      for (const t of slotsOfDay()) {
-        if (last != null && t > last + SLOT) {
-          const br = document.createElement("div");
-          br.className = "mini-slot break";
-          br.textContent = "11:30–14:00";
-          col.appendChild(br);
-        }
-        last = t;
-        const hit = items.find((x) => t >= x.inicioMin && t < x.inicioMin + x.duracaoMin);
-        if (hit) {
-          if (used.has(hit.id)) continue;
-          used.add(hit.id);
-          const el = document.createElement("div");
-          el.className = "mini-slot busy";
-          el.style.background = colorFor(hit.cliente);
-          el.textContent = `${minutesToHHMM(hit.inicioMin)} ${hit.cliente}`;
-          el.onclick = () => openEdit(hit);
-          col.appendChild(el);
-        } else {
-          const el = document.createElement("div");
-          el.className = "mini-slot is-free";
-          el.textContent = minutesToHHMM(t);
-          el.onclick = () => quickBook(iso, t);
-          col.appendChild(el);
-        }
-      }
-      const end = document.createElement("div");
-      end.className = "mini-slot end";
-      end.textContent = "18:00";
-      col.appendChild(end);
-      if (!used.size) col.classList.add("is-empty");
-      grid.appendChild(col);
+      daysNav.appendChild(pill);
+    });
+    weekWrapper.appendChild(daysNav);
+
+    // Dica de rolagem sutil para celular
+    const scrollHint = document.createElement("div");
+    scrollHint.className = "week-scroll-hint";
+    scrollHint.innerHTML = `<span>📅 Seg a Sáb</span><span class="hint-badge">👉 Toque no dia ou deslize</span>`;
+    weekWrapper.appendChild(scrollHint);
+
+    const weekCard = document.createElement("div");
+    weekCard.className = "week-matrix-card";
+
+    // Sincroniza a pílula ativa conforme o usuário desliza com o dedo
+    weekCard.addEventListener("scroll", () => {
+      const currentLeft = weekCard.scrollLeft;
+      const activeIdx = Math.min(5, Math.max(0, Math.round((currentLeft - 20) / 82)));
+      daysNav.querySelectorAll(".day-nav-pill").forEach((p, i) => {
+        p.classList.toggle("is-active", i === activeIdx);
+      });
+    }, { passive: true });
+
+    // 1. Cabeçalho dos dias
+    const headRow = document.createElement("div");
+    headRow.className = "week-matrix-head";
+    const emptyCorner = document.createElement("div");
+    emptyCorner.className = "th-time-empty";
+    headRow.appendChild(emptyCorner);
+
+    days.forEach((d) => {
+      const th = document.createElement("div");
+      th.className = "th-day" + (d.iso === todayIso ? " is-today" : "");
+      th.innerHTML = `<span class="day-name">${d.weekdayShort}</span><span class="day-date">${d.dayNum}</span>`;
+      th.onclick = () => {
+        cursor = d.date;
+        view = "dia";
+        render();
+      };
+      headRow.appendChild(th);
+    });
+    weekCard.appendChild(headRow);
+
+    // Definição dos slots
+    const morningSlots = [510, 540, 570, 600, 630, 660, 690]; // 08:30 a 11:30 (7 slots)
+    const afternoonSlots = [840, 870, 900, 930, 960, 990, 1020, 1050]; // 14:00 a 17:30 (8 slots)
+
+    function renderShift(slotList, shiftClass) {
+      const shiftWrap = document.createElement("div");
+      shiftWrap.className = "week-shift " + shiftClass;
+
+      // Coluna de horários
+      const timeCol = document.createElement("div");
+      timeCol.className = "shift-time-col";
+      slotList.forEach((t) => {
+        const mark = document.createElement("div");
+        mark.className = "time-slot-label";
+        mark.textContent = minutesToHHMM(t);
+        timeCol.appendChild(mark);
+      });
+      shiftWrap.appendChild(timeCol);
+
+      // 6 Colunas dos dias
+      days.forEach((d) => {
+        const col = document.createElement("div");
+        col.className = "shift-day-col" + (d.iso === todayIso ? " is-today" : "");
+        const dayItems = onDate(list, d.iso);
+        let coveredUntil = -1;
+
+        slotList.forEach((t, slotIdx) => {
+          if (t < coveredUntil) return; // slot coberto pelo card anterior
+
+          const hit = dayItems.find((x) => t >= x.inicioMin && t < x.inicioMin + x.duracaoMin);
+          const gridRowStart = slotIdx + 1;
+
+          if (hit) {
+            const shiftEndMin = slotList[slotList.length - 1] + SLOT;
+            const endCover = Math.min(hit.inicioMin + hit.duracaoMin, shiftEndMin);
+            const span = Math.max(1, Math.round((endCover - t) / SLOT));
+            coveredUntil = endCover;
+
+            const card = document.createElement("div");
+            card.className = "week-event-card";
+            card.style.background = colorFor(hit.cliente);
+            card.style.gridRow = `${gridRowStart} / span ${span}`;
+            card.innerHTML = `
+              <div class="event-name">${esc(hit.cliente)}</div>
+              <div class="event-time">${minutesToHHMM(hit.inicioMin)} – ${minutesToHHMM(hit.inicioMin + hit.duracaoMin)}</div>
+            `;
+            card.onclick = () => openEdit(hit);
+            col.appendChild(card);
+          } else {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "week-chip-free";
+            btn.style.gridRow = `${gridRowStart} / span 1`;
+            btn.textContent = "Livre";
+            btn.title = `Agendar às ${minutesToHHMM(t)}`;
+            btn.onclick = () => quickBook(d.iso, t);
+            col.appendChild(btn);
+          }
+        });
+
+        shiftWrap.appendChild(col);
+      });
+
+      return shiftWrap;
     }
-    calendarEl.replaceChildren(grid);
+
+    // 2. Manhã
+    weekCard.appendChild(renderShift(morningSlots, "shift-morning"));
+
+    // 3. Intervalo e controle de ocultar/expandir a tarde
+    let afternoonJobsCount = 0;
+    days.forEach((d) => {
+      const items = onDate(list, d.iso);
+      afternoonJobsCount += items.filter((x) => x.inicioMin >= 840).length;
+    });
+
+    let isAfternoonHidden = localStorage.getItem("agenda_tarde_oculta") === "1";
+
+    const afternoonShift = renderShift(afternoonSlots, "shift-afternoon");
+    if (isAfternoonHidden) {
+      afternoonShift.classList.add("is-collapsed");
+    }
+
+    const breakBanner = document.createElement("button");
+    breakBanner.type = "button";
+    breakBanner.className = "week-interval-divider" + (isAfternoonHidden ? " is-collapsed" : "");
+    breakBanner.setAttribute("aria-expanded", !isAfternoonHidden);
+
+    const updateBannerContent = () => {
+      breakBanner.title = isAfternoonHidden
+        ? "Toque para ver a parte da tarde (14:00 às 18:00)"
+        : "Toque na seta para ocultar a tarde e ganhar espaço";
+
+      const badgeHtml = afternoonJobsCount > 0
+        ? `<span class="afternoon-badge has-jobs">${afternoonJobsCount} agendamento${afternoonJobsCount > 1 ? "s" : ""}</span>`
+        : `<span class="afternoon-badge is-empty">Tarde livre</span>`;
+
+      breakBanner.innerHTML = `
+        <span class="toggle-arrow" aria-hidden="true">${isAfternoonHidden ? "▶" : "▼"}</span>
+        <span class="break-title">☕ 11:30 às 14:00 · Tarde (14h–18h)</span>
+        ${badgeHtml}
+        <span class="break-hint">${isAfternoonHidden ? "toque p/ abrir" : "toque p/ ocultar"}</span>
+      `;
+    };
+    updateBannerContent();
+
+    breakBanner.onclick = () => {
+      isAfternoonHidden = !isAfternoonHidden;
+      localStorage.setItem("agenda_tarde_oculta", isAfternoonHidden ? "1" : "0");
+      breakBanner.classList.toggle("is-collapsed", isAfternoonHidden);
+      breakBanner.setAttribute("aria-expanded", !isAfternoonHidden);
+      afternoonShift.classList.toggle("is-collapsed", isAfternoonHidden);
+      updateBannerContent();
+    };
+
+    weekCard.appendChild(breakBanner);
+
+    // 4. Tarde
+    weekCard.appendChild(afternoonShift);
+
+    weekWrapper.appendChild(weekCard);
+    calendarEl.replaceChildren(weekWrapper);
   }
 
   function renderMonth(list) {
@@ -2467,7 +2782,7 @@
   document.querySelectorAll(".tab").forEach((b) => {
     b.onclick = () => {
       const panel = b.dataset.panel;
-      document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("is-on", x === b));
+      document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("is-on", x.dataset.panel === panel));
       const layout = document.querySelector(".layout");
       layout.classList.toggle("is-comandos", panel === "comandos");
       layout.classList.toggle("is-agenda", panel === "agenda");
@@ -2475,6 +2790,20 @@
       if (panel === "dashboard") renderDashFromStore();
     };
   });
+
+  const btnNovoDesktop = $("btnNovoAgendamentoDesktop");
+  if (btnNovoDesktop) btnNovoDesktop.addEventListener("click", beginAddCliente);
+
+  const btnNovoMobile = $("btnNovoAgendamentoMobile");
+  if (btnNovoMobile) btnNovoMobile.addEventListener("click", beginAddCliente);
+
+  const headerHojeBtn = $("headerHojeBtn");
+  if (headerHojeBtn) {
+    headerHojeBtn.addEventListener("click", () => {
+      cursor = startOfDay(now());
+      render();
+    });
+  }
   const layoutEl = document.querySelector(".layout");
   if (!layoutEl.classList.contains("is-agenda") && !layoutEl.classList.contains("is-dashboard") && !layoutEl.classList.contains("is-comandos")) {
     layoutEl.classList.add("is-agenda");

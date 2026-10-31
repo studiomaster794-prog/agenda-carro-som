@@ -20,32 +20,48 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20">
+  <link rel="stylesheet" href="styles.css?v=28">
 </head>
 <body>
   <header class="top">
     <div class="brand">
-      <img class="logo" src="icons/icon-192.png" width="48" height="48" alt="">
+      <div class="logo-wrap">
+        <img class="logo" src="icons/icon-192.png" width="48" height="48" alt="Studio Seiko">
+      </div>
       <div>
-        <p class="mark">Studio Seiko</p>
-        <h1>Carro de som</h1>
+        <p class="mark">STUDIO SEIKO</p>
+        <h1>CARRO DE SOM</h1>
+        <p class="slogan">Som que faz a diferença!</p>
       </div>
     </div>
-    <p class="hours" title="Horário de funcionamento"><span class="live-dot" aria-hidden="true"></span> seg–sáb · 8:30–11:30 · 14:00–18:00 · <span id="rateHint">R$ 50/h</span></p>
-  </header>
 
-  <nav class="tabs" aria-label="Seções">
-    <button type="button" class="tab is-on" data-panel="agenda">Agenda</button>
-    <button type="button" class="tab" data-panel="dashboard">Dashboard</button>
-    <button type="button" class="tab" data-panel="comandos">Comandos</button>
-  </nav>
+    <nav class="tabs desktop-tabs" aria-label="Seções">
+      <button type="button" class="tab is-on" data-panel="agenda">
+        <span class="tab-icon">📅</span> Agenda
+      </button>
+      <button type="button" class="tab" data-panel="dashboard">
+        <span class="tab-icon">📊</span> Dashboard
+      </button>
+      <button type="button" class="tab" data-panel="comandos">
+        <span class="tab-icon">⚙️</span> Comandos
+      </button>
+    </nav>
+
+    <div class="header-actions">
+      <p class="hours" title="Horário de funcionamento"><span class="live-dot" aria-hidden="true"></span> seg–sáb · 8:30–11:30 · 14:00–18:00 · <span id="rateHint">R$ 50/h</span></p>
+      <button type="button" class="header-hoje" id="headerHojeBtn">📅 Hoje</button>
+    </div>
+  </header>
 
   <main class="layout is-agenda">
     <section class="board" id="panel-agenda">
       <div class="toolbar">
         <div class="pager">
           <button type="button" id="prevBtn" aria-label="Anterior">‹</button>
-          <h2 id="periodTitle">—</h2>
+          <div class="period-wrap">
+            <span class="calendar-badge" aria-hidden="true">📅</span>
+            <h2 id="periodTitle">—</h2>
+          </div>
           <button type="button" id="nextBtn" aria-label="Próximo">›</button>
         </div>
         <div class="views" role="tablist" aria-label="Visão">
@@ -55,7 +71,54 @@
         </div>
         <button type="button" class="ghost" id="hojeBtn">Hoje</button>
       </div>
-      <div id="calendar" class="calendar"></div>
+
+      <div class="agenda-workspace">
+        <div id="calendar" class="calendar"></div>
+
+        <aside class="agenda-sidebar" id="agendaSidebar">
+          <div class="sidebar-box">
+            <div class="sidebar-box-title">Clientes</div>
+            <div id="clientsLegend" class="legend-list"></div>
+          </div>
+
+          <div class="sidebar-box stat-box">
+            <div class="stat-icon">📅</div>
+            <div>
+              <div class="stat-lbl">Total da Semana</div>
+              <div id="sidebarTotalSemana" class="stat-val">—</div>
+            </div>
+          </div>
+
+          <div class="sidebar-box stat-box is-free">
+            <div class="stat-icon-circle">✔</div>
+            <div>
+              <div class="stat-lbl">Livre Agora</div>
+              <div id="sidebarLivreAgora" class="stat-val">—</div>
+            </div>
+          </div>
+
+          <button type="button" class="btn-novo-agendamento" id="btnNovoAgendamentoDesktop">
+            + Novo Agendamento
+          </button>
+
+          <div class="sidebar-photo-card">
+            <div class="photo-wrap">
+              <img src="icons/icon-512.png" alt="Studio Seiko Carro de Som">
+            </div>
+            <div class="photo-caption">
+              <strong>Studio Seiko</strong><br>
+              <span>no centro de Cururupu!</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="mobile-footer-actions">
+        <div class="mobile-legend" id="mobileClientsLegend"></div>
+        <button type="button" class="btn-novo-agendamento mobile-btn" id="btnNovoAgendamentoMobile">
+          + Novo Agendamento
+        </button>
+      </div>
     </section>
 
     <section class="board dash" id="panel-dashboard">
@@ -242,7 +305,22 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=23"></script>
+  <nav class="bottom-nav" aria-label="Navegação móvel">
+    <button type="button" class="tab is-on" data-panel="agenda">
+      <span class="nav-icon">📅</span>
+      <span class="nav-label">Agenda</span>
+    </button>
+    <button type="button" class="tab" data-panel="dashboard">
+      <span class="nav-icon">📊</span>
+      <span class="nav-label">Dashboard</span>
+    </button>
+    <button type="button" class="tab" data-panel="comandos">
+      <span class="nav-icon">⚙️</span>
+      <span class="nav-label">Comandos</span>
+    </button>
+  </nav>
+
+  <script src="app.js?v=28"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
